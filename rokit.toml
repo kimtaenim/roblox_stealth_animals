@@ -1,0 +1,6 @@
+# 개발 도구 버전 고정 (https://github.com/rojo-rbx/rokit)
+# 설치: 프로젝트 폴더에서 `rokit install`
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"
+stylua = "JohnnyMorganz/StyLua@2.0.2"
+selene = "Kampfkarren/selene@0.28.0"
