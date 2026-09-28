@@ -1,92 +1,227 @@
 -- 서버와 클라이언트가 함께 쓰는 게임 설정값
--- 좌표는 Baseplate 기준. 스폰 지점(0, 0, 0)에서 +Z 방향이 농장, -Z 방향이 플레이어 기지.
-local Config = {
-	GameName = "Stealth Animals",
+-- 좌표는 Baseplate 기준. 스폰(0, 0, 0) 주변이 기지, +Z 방향으로 출발선을 넘으면 지역들이 차례로 나온다.
+local Config = {}
 
-	-- 플레이어 이동
-	WalkSpeed = 16,
-	SneakSpeed = 8, -- 살금살금 모드 속도
-	SneakKey = Enum.KeyCode.LeftControl,
-	CarrySpeedMultiplier = 0.75, -- 동물을 들고 있을 때 속도 배율
+Config.GameName = "Stealth Animals"
 
-	-- 훔칠 수 있는 동물. Income = 기지에 있을 때 초당 버는 코인
-	Animals = {
-		Chicken = { DisplayName = "닭", Emoji = "🐔", Income = 1, StealTime = 0.5 },
-		Pig = { DisplayName = "돼지", Emoji = "🐷", Income = 3, StealTime = 1 },
-		Cow = { DisplayName = "소", Emoji = "🐮", Income = 6, StealTime = 1.5 },
+--------------------------------------------------------------------------------
+-- 속도
+--------------------------------------------------------------------------------
+-- 속도 숫자가 클수록 실제로 빨리 달린다. 숫자가 너무 커지므로 log로 줄여서 WalkSpeed로 바꾼다.
+Config.Movement = {
+	BaseWalkSpeed = 16, -- 속도 0일 때
+	PerDigit = 7, -- 속도가 10배 될 때마다 늘어나는 WalkSpeed
+	MaxWalkSpeed = 110,
+}
+
+function Config.walkSpeedFor(speed: number): number
+	local m = Config.Movement
+	return math.min(m.BaseWalkSpeed + m.PerDigit * math.log10(1 + math.max(speed, 0)), m.MaxWalkSpeed)
+end
+
+--------------------------------------------------------------------------------
+-- 러닝머신 (레벨별 초당 속도 증가량과 업그레이드 비용은 자유롭게 바꿔도 된다)
+--------------------------------------------------------------------------------
+Config.Treadmill = {
+	BeltSpeed = 10, -- 벨트가 뒤로 미는 속도. 달리지 않으면 밀려서 떨어진다.
+	Levels = {
+		{ Gain = 1, Cost = 0 }, -- 레벨 1 (처음)
+		{ Gain = 3, Cost = 100 },
+		{ Gain = 10, Cost = 1_000 },
+		{ Gain = 40, Cost = 10_000 },
+		{ Gain = 150, Cost = 100_000 },
+		{ Gain = 500, Cost = 1_000_000 }, -- 레벨 6 (최고)
 	},
+}
 
-	Farm = {
-		Center = Vector3.new(0, 0, 120),
-		Width = 100, -- X 방향 크기
-		Depth = 80, -- Z 방향 크기 (z 80 ~ 160)
-		RespawnTime = 10, -- 훔쳐간 자리에 새 동물이 나타나기까지 (초)
+--------------------------------------------------------------------------------
+-- 에그 등급
+--------------------------------------------------------------------------------
+-- RewardFraction: 그 지역 코스믹 보상의 몇 배를 주는지 (코스믹 = 1)
+-- RespawnTime: 훔쳐간 뒤 같은 자리에 새 에그가 나타나기까지 (초)
+Config.Rarities = {
+	{
+		Id = "Common",
+		Name = "일반",
+		Color = Color3.fromRGB(180, 180, 180),
+		HatchTime = 5,
+		RewardFraction = 0.001,
+		RespawnTime = 5,
+	},
+	{
+		Id = "Uncommon",
+		Name = "드문",
+		Color = Color3.fromRGB(90, 200, 90),
+		HatchTime = 30,
+		RewardFraction = 0.003,
+		RespawnTime = 10,
+	},
+	{
+		Id = "Rare",
+		Name = "희귀",
+		Color = Color3.fromRGB(70, 140, 255),
+		HatchTime = 180,
+		RewardFraction = 0.01,
+		RespawnTime = 20,
+	},
+	{
+		Id = "Epic",
+		Name = "에픽",
+		Color = Color3.fromRGB(170, 80, 230),
+		HatchTime = 300,
+		RewardFraction = 0.03,
+		RespawnTime = 30,
+	},
+	{
+		Id = "Legendary",
+		Name = "전설",
+		Color = Color3.fromRGB(255, 170, 30),
+		HatchTime = 600,
+		RewardFraction = 0.08,
+		RespawnTime = 45,
+	},
+	{
+		Id = "Mythic",
+		Name = "신화",
+		Color = Color3.fromRGB(240, 60, 60),
+		HatchTime = 1800,
+		RewardFraction = 0.2,
+		RespawnTime = 60,
+	},
+	{
+		Id = "Secret",
+		Name = "비밀",
+		Color = Color3.fromRGB(35, 35, 35),
+		HatchTime = 2400,
+		RewardFraction = 0.5,
+		RespawnTime = 90,
+	},
+	{
+		Id = "Cosmic",
+		Name = "코스믹",
+		Color = Color3.fromRGB(255, 100, 220),
+		HatchTime = 3600,
+		RewardFraction = 1,
+		RespawnTime = 120,
+		Neon = true,
+	},
+}
 
-		-- 입구(앞쪽)에 가까울수록 싸고, 깊숙할수록 비싼 동물
-		AnimalSpots = {
-			{ Kind = "Chicken", Position = Vector3.new(-15, 0, 100) },
-			{ Kind = "Chicken", Position = Vector3.new(-8, 0, 104) },
-			{ Kind = "Chicken", Position = Vector3.new(12, 0, 102) },
-			{ Kind = "Pig", Position = Vector3.new(-12, 0, 120) },
-			{ Kind = "Pig", Position = Vector3.new(14, 0, 122) },
-			{ Kind = "Cow", Position = Vector3.new(-12, 0, 152) },
-			{ Kind = "Cow", Position = Vector3.new(12, 0, 152) },
+--------------------------------------------------------------------------------
+-- 지역 (위에서부터 1번 지역). RequiredSpeed = 들어가는 데 필요한 속도
+--------------------------------------------------------------------------------
+Config.Regions = {
+	{
+		Id = "Forest",
+		Name = "숲",
+		Emoji = "🌲",
+		RequiredSpeed = 0,
+		Cosmic = { Speed = 50_000, Money = 100_000 },
+		GroundColor = Color3.fromRGB(90, 150, 70),
+		-- 등급별로 부화하는 동물 (Kind = AnimalFactory 모양 이름)
+		Animals = {
+			Common = { Kind = "Rabbit", Name = "토끼" },
+			Uncommon = { Kind = "Boar", Name = "멧돼지" },
+			Rare = { Kind = "Fox", Name = "여우" },
+			Epic = { Kind = "Deer", Name = "사슴" },
+			Legendary = { Kind = "Wolf", Name = "늑대" },
+			Mythic = { Kind = "Bear", Name = "곰" },
+			Secret = { Kind = "Unicorn", Name = "유니콘" },
+			Cosmic = { Kind = "CosmicStag", Name = "우주 사슴" },
 		},
-
-		-- 숨을 수 있는 건초더미 위치
-		HayBales = {
-			Vector3.new(0, 0, 112),
-			Vector3.new(-22, 0, 128),
-			Vector3.new(22, 0, 132),
-			Vector3.new(0, 0, 138),
-		},
+		-- 에그를 들고 있으면 쫓아와서 때리는 동물
+		Chasers = { "Wolf", "Wolf", "Bear" },
+		ChaserSpeed = 24,
 	},
-
-	Base = {
-		-- 플레이어마다 기지 하나 (최대 4명)
-		PlotCenters = {
-			Vector3.new(-60, 0, -40),
-			Vector3.new(-20, 0, -40),
-			Vector3.new(20, 0, -40),
-			Vector3.new(60, 0, -40),
-		},
-		PlotColors = {
-			Color3.fromRGB(90, 150, 230),
-			Color3.fromRGB(230, 110, 110),
-			Color3.fromRGB(120, 200, 120),
-			Color3.fromRGB(230, 190, 80),
-		},
-		PlotSize = 30,
+	-- 아래 지역들은 아직 맵을 만들지 않았다 (BuiltRegionCount 참고). 보상은 확정, 필요 속도는 임시값.
+	{
+		Id = "Desert",
+		Name = "사막",
+		Emoji = "🏜️",
+		RequiredSpeed = 5_000,
+		Cosmic = { Speed = 100_000, Money = 1_000_000 },
 	},
-
-	World = {
-		FenceHeight = 3,
-		FenceGap = 12, -- 울타리 입구 폭
+	{
+		Id = "Jungle",
+		Name = "정글",
+		Emoji = "🌴",
+		RequiredSpeed = 50_000,
+		Cosmic = { Speed = 10_000_000, Money = 10_000_000 },
 	},
-
-	-- 농부(경비)
-	Guard = {
-		WalkSpeed = 10,
-		ViewDistance = 40, -- 볼 수 있는 최대 거리 (스터드)
-		ViewAngle = 90, -- 시야각 (정면 기준 전체 각도, 도)
-
-		-- 순찰 경로 하나당 농부 한 명. 경로를 추가하면 농부도 늘어난다.
-		PatrolRoutes = {
-			{
-				Vector3.new(-35, 0, 95),
-				Vector3.new(35, 0, 95),
-				Vector3.new(35, 0, 145),
-				Vector3.new(-35, 0, 145),
-			},
-		},
+	{
+		Id = "DeepSea",
+		Name = "심해",
+		Emoji = "🌊",
+		RequiredSpeed = 5_000_000,
+		Cosmic = { Speed = 100_000_000, Money = 10_000_000 },
 	},
-
-	Detection = {
-		BaseRate = 0.5, -- 보이는 동안 초당 차오르는 양 (1이면 가득). 가까울수록 최대 2배
-		SneakMultiplier = 0.4, -- 살금살금/가만히 있을 때 차오르는 속도 배율
-		DecayPerSecond = 0.25, -- 안 보일 때 초당 줄어드는 양
-		AlertThreshold = 0.5, -- 이 값 이상이면 농부 머리 위가 "?" 에서 "!" 로 바뀜
+	{
+		Id = "StoneAge",
+		Name = "석기시대",
+		Emoji = "🪨",
+		RequiredSpeed = 50_000_000,
+		Boss = "망치를 든 원시인",
+		Cosmic = { Speed = 1_000_000_000, Money = 10_000_000 },
 	},
+	{
+		Id = "Spring",
+		Name = "봄",
+		Emoji = "🌸",
+		RequiredSpeed = 500_000_000,
+		Boss = "구미호",
+		Cosmic = { Speed = 10_000_000_000, Money = 10_000_000 },
+	},
+}
+
+Config.BuiltRegionCount = 1 -- 지금은 숲만 만든다
+
+Config.MaxMoneyReward = 10_000_000 -- 에그 하나로 받을 수 있는 돈의 최대치
+
+function Config.rewardFor(regionIndex: number, rarityIndex: number): (number, number)
+	local cosmic = Config.Regions[regionIndex].Cosmic
+	local fraction = Config.Rarities[rarityIndex].RewardFraction
+	local speed = math.floor(cosmic.Speed * fraction)
+	local money = math.min(math.floor(cosmic.Money * fraction), Config.MaxMoneyReward)
+	return speed, money
+end
+
+--------------------------------------------------------------------------------
+-- 맵 배치
+--------------------------------------------------------------------------------
+Config.Base = {
+	Width = 140, -- X 방향
+	Depth = 80, -- Z 방향 (z -40 ~ 40), z = 40 이 출발선
+	PlotSize = 28,
+	PlotCenters = {
+		Vector3.new(-51, 0, -25),
+		Vector3.new(-17, 0, -25),
+		Vector3.new(17, 0, -25),
+		Vector3.new(51, 0, -25),
+	},
+	PlotColors = {
+		Color3.fromRGB(90, 150, 230),
+		Color3.fromRGB(230, 110, 110),
+		Color3.fromRGB(120, 200, 120),
+		Color3.fromRGB(230, 190, 80),
+	},
+	TreadmillXs = { -45, -15, 15, 45 }, -- 러닝머신 위치 (z 2 ~ 18)
+	UpgradeKiosk = Vector3.new(0, 0, 24),
+}
+
+Config.RegionLayout = {
+	FirstStartZ = 100, -- 1번 지역이 시작되는 z
+	Length = 200,
+	Gap = 40, -- 지역 사이 간격
+	Width = 100,
+}
+
+Config.Chaser = {
+	AggroRange = 50, -- 에그를 든 플레이어를 알아채는 거리
+	LeashMargin = 20, -- 지역 밖으로 이만큼 나가면 포기하고 돌아감
+	HitRange = 5,
+	HitCooldown = 1.5,
+	KnockbackHorizontal = 90,
+	KnockbackVertical = 60,
 }
 
 return Config

@@ -1,14 +1,16 @@
 # CLAUDE.md
 
-Roblox 스텔스 게임 "Stealth Animals": 농장에서 동물을 훔쳐 자기 기지로 운반하면 동물이 코인을 생산한다. 농부(경비 NPC)가 순찰하며 시야로 감지. 사용자는 한국어로 소통하며 로블록스 개발 입문자입니다 — 설명은 한국어로, 쉽게.
+Roblox 게임 "Stealth Animals": 출발선 안 기지에서 러닝머신으로 속도를 올리고, 지역(숲→사막→정글→심해→석기시대→봄)에서 에그를 훔쳐 와 부화시키고, 인덱스의 "모두 받기"로 속도·돈을 얻는다. 에그를 든 플레이어는 지역 동물이 쫓아와 때려서 날려 보낸다. 사용자는 한국어로 소통하며 로블록스 개발 입문자입니다 — 설명은 한국어로, 쉽게.
 
 ## 구조
 - Rojo 7 프로젝트. 매핑은 `default.project.json`.
 - `src/server/*.server.luau` → ServerScriptService.Server
 - `src/client/*.client.luau` → StarterPlayer.StarterPlayerScripts.Client
 - `src/shared/*.luau` → ReplicatedStorage.Shared (ModuleScript)
-- 맵/모델/파트는 Rojo로 관리하지 않음. 현재 농장·기지·동물·농부는 코드가 생성(`World`, `AnimalFactory`, `Guard`). 사용자가 Studio에서 맵을 꾸미면 그쪽을 `WaitForChild`로 찾도록 전환.
-- 서버 모듈: `Main.server`(게임 흐름), `World`(맵), `AnimalFactory`(동물 모델), `Guard`(농부 순찰/시야). 클라이언트: `Main.client`(이동 속도), `HUD.client`(UI). 서버→클라 메시지는 `ReplicatedStorage.Notify` RemoteEvent, 상태는 Player 속성(`Carrying`, `Detection`).
+- 맵/모델/파트는 Rojo로 관리하지 않음. 현재 기지·지역·동물·에그는 코드가 생성. 사용자가 Studio에서 맵을 꾸미면 그쪽을 `WaitForChild`로 찾도록 전환.
+- 서버 모듈: `Main.server`(게임 흐름), `World`(맵), `AnimalFactory`(동물·에그 모델), `Chaser`(쫓아오는 동물), `PlayerStats`(속도·돈·러닝머신 레벨). 클라이언트: `Main.client`(WalkSpeed·넉백), `HUD.client`(UI·인덱스). 공용: `Config`, `Format`(숫자 k/m/b 표기).
+- RemoteEvent: `Notify`(서버→클라 메시지), `Knockback`(서버→클라, 캐릭터 물리는 클라가 소유), `ClaimAll`(클라→서버). 상태는 Player 속성(`Speed`, `Money`, `TreadmillLevel`, `Carrying`, `PendingSpeed`, `PendingMoney`, `Index_<지역>_<등급>`).
+- 지역 추가: `Config.Regions`에 `GroundColor`/`Animals`/`Chasers`/`ChaserSpeed` 채우고 `BuiltRegionCount` 증가.
 
 ## 규칙
 - 언어는 Luau. 타입 주석 사용 권장, 문자열 보간(``` `{x}` ```) 사용.

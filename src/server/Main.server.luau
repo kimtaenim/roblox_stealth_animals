@@ -1,55 +1,63 @@
--- 서버 진입점: 농장 동물 훔치기 → 기지로 운반 → 코인 생산, 그리고 농부의 감시를 담당한다.
+-- 서버 진입점: 러닝머신 → 에그 훔치기 → 기지로 운반 → 부화 → 인덱스에서 모두 받기
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Format = require(ReplicatedStorage.Shared.Format)
 local AnimalFactory = require(script.Parent.AnimalFactory)
-local Guard = require(script.Parent.Guard)
+local Chaser = require(script.Parent.Chaser)
+local PlayerStats = require(script.Parent.PlayerStats)
 local World = require(script.Parent.World)
 
--- 클라이언트 화면에 메시지를 띄우는 통로. (text, kind: "info" | "success" | "danger")
-local notify = Instance.new("RemoteEvent")
-notify.Name = "Notify"
-notify.Parent = ReplicatedStorage
-
-local farmAnimals = World.buildFarm()
-local plots = World.buildPlots()
-
-local guardsFolder = Instance.new("Folder")
-guardsFolder.Name = "Farmers"
-guardsFolder.Parent = workspace
-local guards = {}
-for _, route in Config.Guard.PatrolRoutes do
-	table.insert(guards, Guard.new(route, guardsFolder))
+local function makeRemote(name: string): RemoteEvent
+	local remote = Instance.new("RemoteEvent")
+	remote.Name = name
+	remote.Parent = ReplicatedStorage
+	return remote
 end
 
-type Carry = { kind: string, model: Model }
-type Stats = { coins: IntValue, animals: IntValue }
+local notify = makeRemote("Notify") -- 서버→클라: (text, kind: "info" | "success" | "danger")
+local knockback = makeRemote("Knockback") -- 서버→클라: (velocity)
+local claimAll = makeRemote("ClaimAll") -- 클라→서버: 인덱스의 "모두 받기"
+
+local base = World.buildBase()
+local regions: { World.Region } = {}
+for i = 1, Config.BuiltRegionCount do
+	regions[i] = World.buildRegion(i)
+end
+
+local chasersFolder = Instance.new("Folder")
+chasersFolder.Name = "Chasers"
+chasersFolder.Parent = workspace
+local chasers = {}
+for _, region in regions do
+	local config = Config.Regions[region.index]
+	for i, kind in config.Chasers do
+		table.insert(chasers, Chaser.new(kind, region.chaserHomes[i], config.ChaserSpeed, region, chasersFolder))
+	end
+end
+
+type Carry = { model: Model, regionIndex: number, rarityIndex: number, warned: boolean }
 
 local carrying: { [Player]: Carry } = {}
 local plotOf: { [Player]: World.Plot } = {}
-local statsOf: { [Player]: Stats } = {}
-local incomeOf: { [Player]: number } = {}
-local detection: { [Player]: number } = {}
 
 --------------------------------------------------------------------------------
--- 동물 운반
+-- 에그 훔치기 / 운반
 --------------------------------------------------------------------------------
 
--- 들고 있던 동물을 없앤다 (들켰거나, 죽었거나, 나갔을 때). 농장 자리는 이미 리스폰 예약되어 있다.
 local function dropCarry(player: Player)
 	local carry = carrying[player]
-	if not carry then
-		return
+	if carry then
+		carrying[player] = nil
+		carry.model:Destroy()
+		player:SetAttribute("Carrying", nil)
 	end
-	carrying[player] = nil
-	carry.model:Destroy()
-	player:SetAttribute("Carrying", nil)
 end
 
--- 동물을 플레이어 머리 위에 붙인다.
-local function pickUp(player: Player, model: Model, kind: string): boolean
+-- 에그를 플레이어 머리 위에 붙인다
+local function pickUp(player: Player, model: Model): boolean
 	local character = player.Character
 	local head = character and character:FindFirstChild("Head") :: BasePart?
 	if not character or not head then
@@ -65,74 +73,244 @@ local function pickUp(player: Player, model: Model, kind: string): boolean
 		end
 	end
 
-	local body = model.PrimaryPart :: BasePart
+	local primary = model.PrimaryPart :: BasePart
 	local weld = Instance.new("Weld")
 	weld.Part0 = head
-	weld.Part1 = body
+	weld.Part1 = primary
 	weld.C0 = CFrame.new(0, head.Size.Y / 2 + boxSize.Y / 2, 0)
-	weld.C1 = body.CFrame:ToObjectSpace(boxCFrame)
-	weld.Parent = body
+	weld.C1 = primary.CFrame:ToObjectSpace(boxCFrame)
+	weld.Parent = primary
 	model.Parent = character
-
-	carrying[player] = { kind = kind, model = model }
-	player:SetAttribute("Carrying", kind)
 	return true
 end
 
-local function spawnFarmAnimal(spot: { Kind: string, Position: Vector3 })
-	local info = Config.Animals[spot.Kind]
-	local model = AnimalFactory.build(spot.Kind)
-	local groundTop = Vector3.new(0, 0.2, 0) -- 농장 바닥 두께
-	model:PivotTo(CFrame.new(spot.Position + groundTop) * CFrame.Angles(0, math.rad(math.random(0, 359)), 0))
-	model.Parent = farmAnimals
+local function spawnEgg(region: World.Region, spot: World.EggSpot)
+	local rarity = Config.Rarities[spot.rarityIndex]
+	local egg = AnimalFactory.buildEgg(rarity.Color, rarity.Neon)
+	egg:PivotTo(CFrame.new(spot.position))
+	egg.Parent = region.eggs
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "훔치기"
-	prompt.ObjectText = `{info.Emoji} {info.DisplayName}`
-	prompt.HoldDuration = info.StealTime
+	prompt.ObjectText = `{rarity.Name} 에그`
+	prompt.HoldDuration = 0.5
 	prompt.MaxActivationDistance = 8
 	prompt.RequiresLineOfSight = false
-	prompt.Parent = model.PrimaryPart
+	prompt.Parent = egg.PrimaryPart
 
 	prompt.Triggered:Connect(function(player)
 		if carrying[player] then
-			notify:FireClient(player, "이미 동물을 들고 있어요!", "info")
+			notify:FireClient(player, "이미 에그를 들고 있어요!", "info")
 			return
 		end
 		if not plotOf[player] then
 			notify:FireClient(player, "빈 기지가 없어서 훔칠 수 없어요.", "danger")
 			return
 		end
-		prompt:Destroy() -- 다른 사람이 동시에 훔치지 못하게
-		if pickUp(player, model, spot.Kind) then
+
+		prompt:Destroy() -- 다른 사람이 동시에 가져가지 못하게
+		if pickUp(player, egg) then
+			carrying[player] =
+				{ model = egg, regionIndex = region.index, rarityIndex = spot.rarityIndex, warned = false }
+			player:SetAttribute("Carrying", `{rarity.Name} 에그`)
 			notify:FireClient(
 				player,
-				`{info.Emoji} {info.DisplayName} 훔치기 성공! 내 기지로 가져가세요`,
+				`{rarity.Name} 에그를 훔쳤어요! 동물을 피해 기지로 돌아가세요`,
 				"success"
 			)
 		else
-			model:Destroy()
+			egg:Destroy()
 		end
-		task.delay(Config.Farm.RespawnTime, spawnFarmAnimal, spot)
+		task.delay(rarity.RespawnTime, spawnEgg, region, spot)
 	end)
 end
 
-for _, spot in Config.Farm.AnimalSpots do
-	spawnFarmAnimal(spot)
+for _, region in regions do
+	for _, spot in region.eggSpots do
+		spawnEgg(region, spot)
+	end
 end
 
--- 기지에 도착하면 동물을 내려놓고 수입을 올린다.
-local function deposit(player: Player, plot: World.Plot, carry: Carry)
-	dropCarry(player)
+--------------------------------------------------------------------------------
+-- 부화
+--------------------------------------------------------------------------------
 
-	local model = AnimalFactory.build(carry.kind)
-	model:PivotTo(World.randomSpotInPlot(plot))
-	model.Parent = plot.animals
+local function updatePending(player: Player, plot: World.Plot)
+	local speed, money = 0, 0
+	for _, pad in plot.pads do
+		if pad.state == "hatched" then
+			local s, m = Config.rewardFor(pad.regionIndex, pad.rarityIndex)
+			speed += s
+			money += m
+		end
+	end
+	player:SetAttribute("PendingSpeed", speed)
+	player:SetAttribute("PendingMoney", money)
+end
 
-	local info = Config.Animals[carry.kind]
-	incomeOf[player] = (incomeOf[player] or 0) + info.Income
-	statsOf[player].animals.Value += 1
-	notify:FireClient(player, `{info.Emoji} {info.DisplayName} 도착! 초당 +{info.Income} 코인`, "success")
+local function placeOnPad(pad: World.Pad, model: Model)
+	local top = pad.part.Position + Vector3.new(0, pad.part.Size.Y / 2, 0)
+	model:PivotTo(CFrame.new(top) * CFrame.Angles(0, math.rad(180), 0)) -- 출발선 쪽을 보게
+	model.Parent = pad.part
+end
+
+-- 기지에 도착하면 빈 부화 자리에 에그를 놓는다
+local function tryDeposit(player: Player, plot: World.Plot, carry: Carry)
+	local pad: World.Pad? = nil
+	for _, candidate in plot.pads do
+		if candidate.state == "empty" then
+			pad = candidate
+			break
+		end
+	end
+	if not pad then
+		if not carry.warned then
+			carry.warned = true
+			notify:FireClient(
+				player,
+				"부화 자리가 꽉 찼어요! 인덱스에서 '모두 받기'를 눌러 주세요",
+				"danger"
+			)
+		end
+		return
+	end
+
+	carrying[player] = nil
+	player:SetAttribute("Carrying", nil)
+	carry.model:Destroy()
+
+	local rarity = Config.Rarities[carry.rarityIndex]
+	local egg = AnimalFactory.buildEgg(rarity.Color, rarity.Neon)
+	placeOnPad(pad, egg)
+	pad.model = egg
+	pad.state = "hatching"
+	pad.regionIndex = carry.regionIndex
+	pad.rarityIndex = carry.rarityIndex
+	pad.hatchAt = os.clock() + rarity.HatchTime
+	notify:FireClient(player, `{rarity.Name} 에그 부화 시작! ({Format.duration(rarity.HatchTime)})`, "success")
+end
+
+local function hatch(player: Player, plot: World.Plot, pad: World.Pad)
+	if pad.model then
+		pad.model:Destroy()
+	end
+	local rarity = Config.Rarities[pad.rarityIndex]
+	local region = Config.Regions[pad.regionIndex]
+	local info = region.Animals[rarity.Id]
+	local speed, money = Config.rewardFor(pad.regionIndex, pad.rarityIndex)
+
+	local animal = AnimalFactory.build(info.Kind)
+	placeOnPad(pad, animal)
+	pad.model = animal
+	pad.state = "hatched"
+	pad.label.Text = `{info.Name}\n⚡{Format.number(speed)} 💰{Format.number(money)}`
+	pad.label.TextColor3 = rarity.Color:Lerp(Color3.new(1, 1, 1), 0.4)
+
+	player:SetAttribute(`Index_{region.Id}_{rarity.Id}`, true) -- 인덱스 잠금 해제
+	updatePending(player, plot)
+	notify:FireClient(player, `{rarity.Name} {info.Name} 부화! 인덱스에서 받아 가세요`, "success")
+end
+
+local function clearPad(pad: World.Pad)
+	if pad.model then
+		pad.model:Destroy()
+	end
+	pad.model = nil
+	pad.state = "empty"
+	pad.label.Text = ""
+end
+
+-- 1초마다 부화 남은 시간 표시 & 부화
+task.spawn(function()
+	while true do
+		task.wait(1)
+		local now = os.clock()
+		for _, plot in base.plots do
+			local owner = plot.owner
+			if not owner then
+				continue
+			end
+			for _, pad in plot.pads do
+				if pad.state == "hatching" then
+					local remaining = pad.hatchAt - now
+					if remaining <= 0 then
+						hatch(owner, plot, pad)
+					else
+						local rarity = Config.Rarities[pad.rarityIndex]
+						pad.label.Text = `{rarity.Name} 에그\n{Format.countdown(remaining)}`
+						pad.label.TextColor3 = Color3.new(1, 1, 1)
+					end
+				end
+			end
+		end
+	end
+end)
+
+claimAll.OnServerEvent:Connect(function(player)
+	local plot = plotOf[player]
+	if not plot then
+		return
+	end
+	local speed, money, count = 0, 0, 0
+	for _, pad in plot.pads do
+		if pad.state == "hatched" then
+			local s, m = Config.rewardFor(pad.regionIndex, pad.rarityIndex)
+			speed += s
+			money += m
+			count += 1
+			clearPad(pad)
+		end
+	end
+	if count == 0 then
+		notify:FireClient(player, "받을 동물이 없어요. 에그를 부화시켜 보세요!", "info")
+		return
+	end
+	PlayerStats.addSpeed(player, speed)
+	PlayerStats.addMoney(player, money)
+	updatePending(player, plot)
+	notify:FireClient(
+		player,
+		`동물 {count}마리 보상! ⚡+{Format.number(speed)} 💰+{Format.number(money)}`,
+		"success"
+	)
+end)
+
+--------------------------------------------------------------------------------
+-- 러닝머신 업그레이드
+--------------------------------------------------------------------------------
+
+do
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "UpgradePrompt"
+	prompt.ActionText = "업그레이드" -- 실제 문구는 각 클라이언트가 자기 레벨에 맞게 바꿔서 보여 준다
+	prompt.ObjectText = "러닝머신"
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = base.kiosk
+
+	prompt.Triggered:Connect(function(player)
+		local data = PlayerStats.get(player)
+		if not data then
+			return
+		end
+		local levels = Config.Treadmill.Levels
+		local nextLevel = data.treadmillLevel + 1
+		if nextLevel > #levels then
+			notify:FireClient(player, "이미 최고 레벨이에요!", "info")
+			return
+		end
+		local cost = levels[nextLevel].Cost
+		if not PlayerStats.spend(player, cost) then
+			notify:FireClient(player, `돈이 부족해요! 💰{Format.number(cost)} 필요`, "danger")
+			return
+		end
+		PlayerStats.setTreadmillLevel(player, nextLevel)
+		notify:FireClient(
+			player,
+			`러닝머신 Lv.{nextLevel}! 초당 ⚡+{Format.number(levels[nextLevel].Gain)}`,
+			"success"
+		)
+	end)
 end
 
 --------------------------------------------------------------------------------
@@ -140,19 +318,11 @@ end
 --------------------------------------------------------------------------------
 
 local function onPlayerAdded(player: Player)
-	local leaderstats = Instance.new("Folder")
-	leaderstats.Name = "leaderstats"
-	local coins = Instance.new("IntValue")
-	coins.Name = "코인"
-	coins.Parent = leaderstats
-	local animals = Instance.new("IntValue")
-	animals.Name = "동물"
-	animals.Parent = leaderstats
-	leaderstats.Parent = player
-	statsOf[player] = { coins = coins, animals = animals }
-	incomeOf[player] = 0
+	PlayerStats.add(player)
+	player:SetAttribute("PendingSpeed", 0)
+	player:SetAttribute("PendingMoney", 0)
 
-	for _, plot in plots do
+	for _, plot in base.plots do
 		if not plot.owner then
 			plot.owner = player
 			plot.sign.Text = `{player.DisplayName}의 기지`
@@ -177,112 +347,74 @@ Players.PlayerRemoving:Connect(function(player)
 	if plot then
 		plot.owner = nil
 		plot.sign.Text = "빈 기지"
-		plot.animals:ClearAllChildren()
-	end
-	plotOf[player] = nil
-	statsOf[player] = nil
-	incomeOf[player] = nil
-	detection[player] = nil
-end)
-
--- 코인 생산
-task.spawn(function()
-	while true do
-		task.wait(1)
-		for player, income in incomeOf do
-			local stats = statsOf[player]
-			if stats and income > 0 then
-				stats.coins.Value += income
-			end
+		for _, pad in plot.pads do
+			clearPad(pad)
 		end
 	end
+	plotOf[player] = nil
+	PlayerStats.remove(player)
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(0.2)
+		PlayerStats.flush()
+	end
 end)
 
 --------------------------------------------------------------------------------
--- 농부의 감시
+-- 매 프레임: 러닝머신, 지역 입장 조건, 기지 도착, 쫓아오는 동물
 --------------------------------------------------------------------------------
 
--- 서버는 클라이언트의 WalkSpeed를 볼 수 없으므로 실제 이동 속도로 살금살금 여부를 판단한다.
-local function isSneaking(root: BasePart): boolean
-	local velocity = root.AssemblyLinearVelocity
-	return Vector3.new(velocity.X, 0, velocity.Z).Magnitude <= Config.SneakSpeed + 1
-end
-
-local function setDetection(player: Player, value: number)
-	detection[player] = value
-	if player:GetAttribute("Detection") ~= value then
-		player:SetAttribute("Detection", value)
-	end
-end
-
-local function caught(player: Player)
-	dropCarry(player)
-	setDetection(player, 0)
-	notify:FireClient(player, "농부에게 들켰어요! 처음으로 돌아갑니다", "danger")
-	task.spawn(player.LoadCharacterAsync, player)
-end
+local BASE_RETURN = CFrame.new(0, 4, Config.Base.Depth / 2 - 6)
 
 RunService.Heartbeat:Connect(function(dt)
-	-- 농부마다 이번 프레임에 쳐다볼 대상 (가장 많이 들킨 플레이어)
-	local targets: { [any]: { position: Vector3, level: number } } = {}
+	local targets: { Chaser.Target } = {}
 
 	for _, player in Players:GetPlayers() do
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if not character or not humanoid or humanoid.Health <= 0 or not root then
+		local data = PlayerStats.get(player)
+		if not character or not humanoid or humanoid.Health <= 0 or not root or not data then
 			continue
 		end
+		local position = root.Position
 
-		-- 기지 도착 확인
-		local carry = carrying[player]
-		local plot = plotOf[player]
-		if carry and plot and World.isInsidePlot(plot, root.Position) then
-			deposit(player, plot, carry)
+		if World.isOnTreadmill(base, position) then
+			PlayerStats.addSpeed(player, Config.Treadmill.Levels[data.treadmillLevel].Gain * dt)
 		end
 
-		-- 시야 판정
-		local level = detection[player] or 0
-		local seenBy = {}
-		for _, guard in guards do
-			local visible, distance = guard:canSee(character)
-			if visible then
-				local closeness = 1 - distance / Config.Guard.ViewDistance
-				local rate = Config.Detection.BaseRate * (0.5 + 1.5 * closeness)
-				if isSneaking(root) then
-					rate *= Config.Detection.SneakMultiplier
-				end
-				level += rate * dt
-				table.insert(seenBy, guard)
+		for _, region in regions do
+			local required = Config.Regions[region.index].RequiredSpeed
+			if data.speed < required and World.isInsideRegion(region, position) then
+				character:PivotTo(BASE_RETURN)
+				notify:FireClient(player, `속도가 부족해요! ⚡{Format.number(required)} 필요`, "danger")
 			end
 		end
-		if #seenBy == 0 then
-			level -= Config.Detection.DecayPerSecond * dt
-		end
-		level = math.clamp(level, 0, 1)
 
-		if level >= 1 then
-			caught(player)
-			continue
-		end
-		setDetection(player, level)
-
-		for _, guard in seenBy do
-			local current = targets[guard]
-			if not current or level > current.level then
-				targets[guard] = { position = root.Position, level = level }
+		local carry = carrying[player]
+		if carry then
+			local plot = plotOf[player]
+			if plot and World.isInsideBase(position) then
+				tryDeposit(player, plot, carry)
+			else
+				table.insert(targets, { player = player, root = root })
 			end
 		end
 	end
 
-	for _, guard in guards do
-		local target = targets[guard]
-		local alertText = ""
-		if target then
-			alertText = if target.level >= Config.Detection.AlertThreshold then "!" else "?"
+	for _, chaser in chasers do
+		local hitPlayer, direction = chaser:update(dt, targets)
+		if hitPlayer and direction then
+			local settings = Config.Chaser
+			knockback:FireClient(
+				hitPlayer,
+				direction * settings.KnockbackHorizontal + Vector3.yAxis * settings.KnockbackVertical
+			)
+			notify:FireClient(hitPlayer, "동물에게 맞았어요! 💥", "danger")
 		end
-		guard:update(target and target.position, alertText)
 	end
 end)
 
-print(`[{Config.GameName}] 서버 시작! 농장에서 동물을 훔쳐 기지로 가져가세요.`)
+print(`[{Config.GameName}] 서버 시작! 러닝머신으로 속도를 올리고 숲에서 에그를 훔쳐 오세요.`)

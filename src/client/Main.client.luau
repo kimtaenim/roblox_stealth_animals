@@ -1,46 +1,36 @@
--- 클라이언트 진입점: 이동 속도 조절
--- 살금살금(Sneak) 키를 누르고 있으면 느려지고, 동물을 들고 있으면 한 번 더 느려진다.
+-- 클라이언트 진입점: 속도 숫자에 맞춰 달리기 속도 조절, 동물에게 맞으면 날아가기
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local player = Players.LocalPlayer
-local sneaking = false
+local knockback = ReplicatedStorage:WaitForChild("Knockback") :: RemoteEvent
 
-local function updateSpeed()
+local function updateWalkSpeed()
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
+	if humanoid then
+		humanoid.WalkSpeed = Config.walkSpeedFor(player:GetAttribute("Speed") or 0)
 	end
-
-	local speed = if sneaking then Config.SneakSpeed else Config.WalkSpeed
-	if player:GetAttribute("Carrying") then
-		speed *= Config.CarrySpeedMultiplier
-	end
-	humanoid.WalkSpeed = speed
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if not gameProcessed and input.KeyCode == Config.SneakKey then
-		sneaking = true
-		updateSpeed()
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Config.SneakKey then
-		sneaking = false
-		updateSpeed()
-	end
-end)
-
-player:GetAttributeChangedSignal("Carrying"):Connect(updateSpeed)
+player:GetAttributeChangedSignal("Speed"):Connect(updateWalkSpeed)
 player.CharacterAdded:Connect(function(character)
 	character:WaitForChild("Humanoid")
-	updateSpeed()
+	updateWalkSpeed()
+end)
+updateWalkSpeed()
+
+-- 캐릭터 물리는 내 컴퓨터가 담당하므로 날려 보내는 것도 여기서 한다
+knockback.OnClientEvent:Connect(function(velocity: Vector3)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if humanoid and root then
+		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+		root.AssemblyLinearVelocity = velocity
+	end
 end)
 
-print(`[{Config.GameName}] 클라이언트 시작! {Config.SneakKey.Name} 키로 살금살금 걸을 수 있어요.`)
+print(`[{Config.GameName}] 클라이언트 시작!`)
