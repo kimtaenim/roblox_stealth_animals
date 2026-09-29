@@ -19,13 +19,19 @@ start "Rojo 서버 - 닫지 마세요" cmd /k rojo serve
 
 echo.
 echo [3/3] Roblox Studio 여는 중...
-if exist "StealthAnimals.rbxl" (
-    start "" "StealthAnimals.rbxl"
-) else (
-    echo StealthAnimals.rbxl 파일이 없어요. Studio에서 직접 게임 파일을 열어 주세요.
+rem StealthAnimals.rbxl 이 있으면 그걸, 없으면 폴더 안의 아무 .rbxl 파일을 연다
+set "PLACE="
+if exist "StealthAnimals.rbxl" set "PLACE=StealthAnimals.rbxl"
+if not defined PLACE for %%f in (*.rbxl *.rbxlx) do if not defined PLACE set "PLACE=%%f"
+if not defined PLACE (
+    echo 이 폴더에 게임 파일^(.rbxl^)이 없어요:
+    echo   %CD%
+    echo Studio에서 게임을 열고 파일 - 다른 이름으로 저장 으로 이 폴더에 StealthAnimals.rbxl 로 저장해 주세요.
     pause
     exit /b 0
 )
+echo %PLACE% 여는 중...
+start "" "%PLACE%"
 
 echo.
 echo 준비 끝! Studio가 열리면 플러그인 탭 - Rojo - Connect 를 누르세요.
