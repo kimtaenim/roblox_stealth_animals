@@ -50,6 +50,9 @@ Claude Code ──push──▶ GitHub ──pull──▶ 내 컴퓨터(src/) �
 
 ## 매일 작업하는 방법
 
+**바탕화면의 `Stealth Animals 시작` 아이콘을 더블클릭**하면 아래 1~3번을 자동으로 해 줍니다 (`start.bat`).
+그다음 Studio에서 **Rojo → Connect** 만 누르면 됩니다.
+
 1. 최신 코드 받기: `git pull`
 2. Rojo 서버 켜기: `rojo serve`
 3. Roblox Studio에서 새 Baseplate(또는 게임 파일) 열기 → **플러그인 탭 → Rojo → Connect**
