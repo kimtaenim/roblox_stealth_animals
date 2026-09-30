@@ -614,7 +614,7 @@ RunService.Heartbeat:Connect(function(dt)
 			if plot and World.isInsideBase(position) then
 				tryDeposit(player, plot, carry)
 			else
-				table.insert(targets, { player = player, root = root })
+				table.insert(targets, { player = player, root = root, regionIndex = carry.region.index })
 			end
 		end
 	end

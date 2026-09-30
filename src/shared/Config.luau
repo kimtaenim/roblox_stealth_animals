@@ -360,8 +360,8 @@ Config.RegionLayout = {
 }
 
 Config.Chaser = {
-	AggroRange = 60, -- 에그를 든 플레이어를 알아채는 거리
-	LeashMargin = 20, -- 지역 밖으로 이만큼 나가면 포기하고 돌아감
+	AggroRange = 60, -- 다른 지역 에그를 든 플레이어를 알아채는 거리 (자기 지역 에그를 훔치면 거리와 상관없이 쫓아옴)
+	LeashMargin = 20, -- 지역 경계선에서 이만큼 더 나가면 포기하고 돌아감
 	NestKeepOut = 20, -- 둥지 중심에서 이 거리 안으로는 들어오지 않는다 (훔칠 틈)
 	WanderSpeedRatio = 0.35, -- 어슬렁거릴 때는 쫓을 때 속도의 이만큼
 	HitRange = 5,

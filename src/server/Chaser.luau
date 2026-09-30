@@ -1,6 +1,6 @@
 -- 지역을 지키는 동물 (보스도 이걸로 만든다). 할 일 순서:
 -- 1) 떨어진 에그가 있으면 주워서 둥지로 가져간다
--- 2) 에그를 들고 있는 플레이어가 가까이 있으면 쫓아가서 때린다
+-- 2) 자기 지역 에그를 훔친 플레이어는 어디 있든 쫓아가서 때린다 (다른 지역 에그면 가까이 올 때만)
 -- 3) 할 일이 없으면 지역 안을 어슬렁어슬렁 돌아다닌다
 -- 둥지 가까이(NestKeepOut)는 들어가지 않아서, 에그를 훔칠 틈이 있다.
 -- 물리 대신 매 프레임 위치를 직접 옮긴다 (바닥이 평평해서 충분).
@@ -14,7 +14,8 @@ local World = require(script.Parent.World)
 local Chaser = {}
 Chaser.__index = Chaser
 
-export type Target = { player: Player, root: BasePart }
+-- regionIndex: 에그를 훔쳐 온 지역. 자기 지역 에그를 훔친 사람은 거리와 상관없이 쫓아간다
+export type Target = { player: Player, root: BasePart, regionIndex: number }
 export type DroppedEgg = { model: Model, spot: World.NestSpot }
 export type Entry = { Kind: string, Color: Color3?, Neon: boolean?, Scale: number? }
 
@@ -78,7 +79,7 @@ function Chaser:update(dt: number, targets: { Target }): (Player?, Vector3?, Dro
 	local now = os.clock()
 
 	local target: Target? = nil
-	local bestDistance = settings.AggroRange
+	local bestDistance = math.huge
 	local goal: Vector3? = nil
 	local speed = self.speed
 
@@ -89,8 +90,10 @@ function Chaser:update(dt: number, targets: { Target }): (Player?, Vector3?, Dro
 	else
 		for _, candidate in targets do
 			local distance = flat(candidate.root.Position - position).Magnitude
+			local noticed = candidate.regionIndex == self.region.index or distance < settings.AggroRange
 			if
-				distance < bestDistance
+				noticed
+				and distance < bestDistance
 				and World.isInsideRegion(self.region, candidate.root.Position, settings.LeashMargin)
 			then
 				target = candidate

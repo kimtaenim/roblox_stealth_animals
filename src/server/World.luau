@@ -152,7 +152,7 @@ end
 
 -- 러닝머신: 올라가 있으면 달리는 동작을 하면서 속도가 오른다 (밀려나지 않음). 밝은 방벽으로 둘러싼다.
 local function buildTreadmill(parent: Instance, x: number): BasePart
-	local length, width, wallHeight = 16, 6, 4
+	local length, width = 16, 6
 	local belt = makePart(
 		parent,
 		"Treadmill",
@@ -162,58 +162,98 @@ local function buildTreadmill(parent: Instance, x: number): BasePart
 		Enum.Material.Rubber
 	)
 
+	-- 옆 테두리는 낮게 (욕조처럼 보이지 않게), 앞쪽은 손잡이가 달린 계기판
 	local wallColor = Config.Treadmill.WallColor
-	local wallY = 1 + wallHeight / 2
 	for _, side in { -1, 1 } do
 		makePart(
 			parent,
-			"TreadmillWall",
-			Vector3.new(1, wallHeight, length),
-			Vector3.new(x + side * (width / 2 + 0.5), wallY, 10),
+			"TreadmillRail",
+			Vector3.new(0.6, 0.8, length),
+			Vector3.new(x + side * (width / 2 + 0.3), 1.4, 10),
+			wallColor,
+			Enum.Material.Neon
+		)
+		makePart(
+			parent,
+			"TreadmillPost",
+			Vector3.new(0.5, 4, 0.5),
+			Vector3.new(x + side * (width / 2 - 0.2), 3, 10 + length / 2 - 0.3),
 			wallColor,
 			Enum.Material.Neon
 		)
 	end
-	local front = makePart(
+	makePart(
 		parent,
-		"TreadmillWall",
-		Vector3.new(width + 2, wallHeight, 1),
-		Vector3.new(x, wallY, 10 + length / 2 + 0.5),
+		"TreadmillHandle",
+		Vector3.new(width, 0.4, 0.4),
+		Vector3.new(x, 4.2, 10 + length / 2 - 1),
 		wallColor,
 		Enum.Material.Neon
+	)
+	local front = makePart(
+		parent,
+		"TreadmillConsole",
+		Vector3.new(width, 1.6, 0.5),
+		Vector3.new(x, 4.6, 10 + length / 2 - 0.3),
+		Color3.fromRGB(60, 60, 70)
 	)
 	makeLabel(front, 4, 200, 40, "🏃 러닝머신")
 	return belt
 end
 
+-- 나무 말뚝 울타리 한 줄: 말뚝 높이와 굵기가 조금씩 달라서 울퉁불퉁해 보인다
+local function buildFenceLine(parent: Instance, from: Vector3, to: Vector3, random: Random)
+	local base = Config.Base
+	local offset = to - from
+	local length = offset.Magnitude
+	local direction = offset.Unit
+	local center = (from + to) / 2
+	local facing = CFrame.lookAt(center, center + direction)
+
+	-- 가로대 두 줄
+	for _, y in { 1.2, 2.6 } do
+		local rail =
+			makePart(parent, "FenceRail", Vector3.new(0.4, 0.5, length), center, base.FenceColor, Enum.Material.Wood)
+		rail.CFrame = facing + Vector3.new(0, y, 0)
+	end
+
+	-- 말뚝
+	local count = math.floor(length / 2.5)
+	for i = 0, count do
+		local position = from + direction * (length * i / count)
+		local height = random:NextNumber(3.2, 5)
+		local thickness = random:NextNumber(0.9, 1.4)
+		local shade = base.FenceColor:Lerp(Color3.fromRGB(90, 60, 35), random:NextNumber(0, 0.5))
+		local post = makePart(
+			parent,
+			"FencePost",
+			Vector3.new(thickness, height, thickness),
+			position,
+			shade,
+			Enum.Material.Wood
+		)
+		post.CFrame = CFrame.new(position.X, height / 2, position.Z)
+			* CFrame.Angles(
+				math.rad(random:NextNumber(-4, 4)),
+				math.rad(random:NextNumber(0, 90)),
+				math.rad(random:NextNumber(-4, 4))
+			)
+	end
+end
+
 -- 기지 울타리: 옆과 뒤는 막고, 출발선 쪽은 가운데에 문
 local function buildBaseFence(parent: Instance)
 	local base = Config.Base
-	local height = 4
 	local halfW, halfD = base.Width / 2, base.Depth / 2
-	local color = base.FenceColor
-	local y = height / 2
+	local gateHalf = base.GateWidth / 2
+	local frontZ = halfD - 1.5
+	local random = Random.new(7)
 
-	makePart(parent, "Fence", Vector3.new(base.Width, height, 1), Vector3.new(0, y, -halfD), color, Enum.Material.Wood)
-	for _, side in { -1, 1 } do
-		makePart(
-			parent,
-			"Fence",
-			Vector3.new(1, height, base.Depth),
-			Vector3.new(side * halfW, y, 0),
-			color,
-			Enum.Material.Wood
-		)
-		local segment = (base.Width - base.GateWidth) / 2
-		makePart(
-			parent,
-			"Fence",
-			Vector3.new(segment, height, 1),
-			Vector3.new(side * (base.GateWidth / 2 + segment / 2), y, halfD - 1.5),
-			color,
-			Enum.Material.Wood
-		)
-	end
+	buildFenceLine(parent, Vector3.new(-halfW, 0, -halfD), Vector3.new(halfW, 0, -halfD), random) -- 뒤
+	buildFenceLine(parent, Vector3.new(-halfW, 0, -halfD), Vector3.new(-halfW, 0, frontZ), random) -- 왼쪽
+	buildFenceLine(parent, Vector3.new(halfW, 0, -halfD), Vector3.new(halfW, 0, frontZ), random) -- 오른쪽
+	buildFenceLine(parent, Vector3.new(-halfW, 0, frontZ), Vector3.new(-gateHalf, 0, frontZ), random) -- 앞 (문 왼쪽)
+	buildFenceLine(parent, Vector3.new(gateHalf, 0, frontZ), Vector3.new(halfW, 0, frontZ), random) -- 앞 (문 오른쪽)
 end
 
 function World.buildBase(): Base
