@@ -65,6 +65,11 @@ Claude Code ──push──▶ GitHub ──pull──▶ 내 컴퓨터(src/) �
    - 출력(Output) 창에 `[Stealth Animals] 서버 시작!` 이 보이면 성공
    - 스폰 주변이 기지, 앞쪽(+Z) 출발선 너머에 숲 지역이 생깁니다
 
+### 게임 파일 저장·백업
+
+- Studio 게임 파일은 **`문서\roblox_stealth_animals\StealthAnimals.rbxl`** 에 저장 (시작 아이콘이 이 파일을 연다)
+- **`backup.bat`** 을 더블클릭하면 이 게임 파일을 GitHub에 백업한다 (Studio에서 Ctrl+S 먼저)
+
 > ⚠️ Rojo는 `src/` 폴더의 **스크립트만** 동기화합니다. 맵·모델(파트, 지형 등)은 Studio에서 직접 만들고
 > Studio 파일(.rbxl)로 저장하세요. 스크립트는 Studio에서 고치지 말고 `src/` 파일을 고쳐야 덮어써지지 않습니다.
 

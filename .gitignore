@@ -1,10 +1,12 @@
-# Roblox Studio 로컬 파일 (Rojo로 코드를 동기화하므로 커밋하지 않음)
+# Roblox Studio 파일은 커밋하지 않음 (코드는 Rojo로 동기화)
+# 단, 율이의 게임 파일 StealthAnimals.rbxl 은 백업.bat 으로 GitHub에 백업한다
 *.rbxl
 *.rbxlx
 *.rbxl.lock
 *.rbxlx.lock
 *.rbxm
 *.rbxmx
+!StealthAnimals.rbxl
 
 # Rojo 빌드 결과물
 /build/
