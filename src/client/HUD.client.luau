@@ -48,19 +48,45 @@ end
 local info = makeText(gui, 18)
 info.AnchorPoint = Vector2.new(0, 0)
 info.Position = UDim2.fromOffset(16, 60)
-info.Size = UDim2.fromOffset(320, 70)
+info.Size = UDim2.fromOffset(440, 70)
 info.TextXAlignment = Enum.TextXAlignment.Left
 info.TextYAlignment = Enum.TextYAlignment.Top
+
+-- 속도가 오를 때 옆에 "+숫자" 가 잠깐 뜬다
+local gainLabel = makeText(gui, 22)
+gainLabel.Position = UDim2.fromOffset(16, 132)
+gainLabel.Size = UDim2.fromOffset(160, 26)
+gainLabel.TextXAlignment = Enum.TextXAlignment.Left
+gainLabel.TextColor3 = Color3.fromRGB(255, 230, 80)
+gainLabel.Visible = false
+
+local lastSpeed = player:GetAttribute("Speed") or 0
+local gainCount = 0
 
 local function refreshInfo()
 	local speed = player:GetAttribute("Speed") or 0
 	local money = player:GetAttribute("Money") or 0
 	local level = player:GetAttribute("TreadmillLevel") or 1
 	local gain = Config.Treadmill.Levels[level].Gain
+	local walk = math.floor(Config.walkSpeedFor(speed))
 	info.Text =
-		`⚡ 속도 {Format.number(speed)}\n💰 돈 {Format.number(money)}\n🏃 러닝머신 Lv.{level} (초당 +{Format.number(
+		`⚡ 속도 {Format.number(speed)}  (달리기 {walk})\n💰 돈 {Format.number(money)}\n🏃 러닝머신 Lv.{level}/{#Config.Treadmill.Levels} (초당 +{Format.number(
 			gain
 		)})`
+
+	local delta = speed - lastSpeed
+	lastSpeed = speed
+	if delta >= 0.5 then
+		gainLabel.Text = `+{Format.number(delta)} ⚡`
+		gainLabel.Visible = true
+		gainCount += 1
+		local myCount = gainCount
+		task.delay(0.6, function()
+			if gainCount == myCount then
+				gainLabel.Visible = false
+			end
+		end)
+	end
 end
 
 -- 운반 중 안내 ---------------------------------------------------------------
@@ -76,6 +102,30 @@ local function refreshCarry()
 		carryLabel.Text = `🥚 {carrying} 운반 중! 출발선 안(내 기지)으로 돌아가세요`
 	end
 end
+
+-- 낮/밤 ---------------------------------------------------------------------
+local dayLabel = makeText(gui, 20)
+dayLabel.AnchorPoint = Vector2.new(0.5, 0)
+dayLabel.Position = UDim2.new(0.5, 0, 0, 12)
+dayLabel.Size = UDim2.fromOffset(420, 26)
+
+task.spawn(function()
+	while true do
+		local endsAt = workspace:GetAttribute("PhaseEndsAt")
+		if endsAt then
+			local remaining = Format.countdown(endsAt - workspace:GetServerTimeNow())
+			if workspace:GetAttribute("IsNight") then
+				dayLabel.Text =
+					`🌙 밤 (부화 {Config.DayNight.NightHatchMultiplier}배!) · 아침까지 {remaining}`
+				dayLabel.TextColor3 = Color3.fromRGB(180, 190, 255)
+			else
+				dayLabel.Text = `☀️ 낮 · 밤까지 {remaining}`
+				dayLabel.TextColor3 = Color3.new(1, 1, 1)
+			end
+		end
+		task.wait(0.5)
+	end
+end)
 
 -- 알림 메시지 ---------------------------------------------------------------
 local toast = makeText(gui, 28)

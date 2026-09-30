@@ -1,4 +1,4 @@
--- 서버 진입점: 러닝머신 → 에그 훔치기 → 기지로 운반 → 부화 → 인덱스에서 모두 받기
+-- 서버 진입점: 러닝머신 → 둥지에서 에그 훔치기(등급 랜덤) → 기지로 운반 → 부화(밤엔 30배) → 인덱스에서 모두 받기
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -7,7 +7,9 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
 local AnimalFactory = require(script.Parent.AnimalFactory)
 local Chaser = require(script.Parent.Chaser)
+local DayNight = require(script.Parent.DayNight)
 local PlayerStats = require(script.Parent.PlayerStats)
+local Sounds = require(script.Parent.Sounds)
 local World = require(script.Parent.World)
 
 local function makeRemote(name: string): RemoteEvent
@@ -27,37 +29,54 @@ for i = 1, Config.BuiltRegionCount do
 	regions[i] = World.buildRegion(i)
 end
 
+-- 지역마다 둥지를 지키는 동물 (보스 포함)
 local chasersFolder = Instance.new("Folder")
 chasersFolder.Name = "Chasers"
 chasersFolder.Parent = workspace
-local chasers = {}
+local chasersOf: { [number]: { any } } = {}
+local allChasers = {}
 for _, region in regions do
 	local config = Config.Regions[region.index]
-	for i, kind in config.Chasers do
-		table.insert(chasers, Chaser.new(kind, region.chaserHomes[i], config.ChaserSpeed, region, chasersFolder))
+	local list = {}
+	for i, entry in config.Chasers do
+		table.insert(list, Chaser.new(entry, region.chaserHomes[i], config.ChaserSpeed, region, chasersFolder))
+	end
+	if config.Boss then
+		local boss = config.Boss
+		table.insert(list, Chaser.new(boss, region.bossHome, boss.Speed, region, chasersFolder))
+	end
+	chasersOf[region.index] = list
+	for _, chaser in list do
+		table.insert(allChasers, chaser)
 	end
 end
 
-type Carry = { model: Model, regionIndex: number, rarityIndex: number, warned: boolean }
+type Carry = { model: Model, region: World.Region, spot: World.NestSpot, rarityIndex: number, warned: boolean }
 
 local carrying: { [Player]: Carry } = {}
 local plotOf: { [Player]: World.Plot } = {}
 
 --------------------------------------------------------------------------------
--- 에그 훔치기 / 운반
+-- 둥지의 에그
 --------------------------------------------------------------------------------
 
-local function dropCarry(player: Player)
-	local carry = carrying[player]
-	if carry then
-		carrying[player] = nil
-		carry.model:Destroy()
-		player:SetAttribute("Carrying", nil)
+local function rollRarity(): number
+	local total = 0
+	for _, rarity in Config.Rarities do
+		total += rarity.Weight
 	end
+	local roll = math.random() * total
+	for index, rarity in Config.Rarities do
+		roll -= rarity.Weight
+		if roll <= 0 then
+			return index
+		end
+	end
+	return 1
 end
 
 -- 에그를 플레이어 머리 위에 붙인다
-local function pickUp(player: Player, model: Model): boolean
+local function attachToHead(player: Player, model: Model): boolean
 	local character = player.Character
 	local head = character and character:FindFirstChild("Head") :: BasePart?
 	if not character or not head then
@@ -75,6 +94,7 @@ local function pickUp(player: Player, model: Model): boolean
 
 	local primary = model.PrimaryPart :: BasePart
 	local weld = Instance.new("Weld")
+	weld.Name = "CarryWeld"
 	weld.Part0 = head
 	weld.Part1 = primary
 	weld.C0 = CFrame.new(0, head.Size.Y / 2 + boxSize.Y / 2, 0)
@@ -84,50 +104,108 @@ local function pickUp(player: Player, model: Model): boolean
 	return true
 end
 
-local function spawnEgg(region: World.Region, spot: World.EggSpot)
-	local rarity = Config.Rarities[spot.rarityIndex]
-	local egg = AnimalFactory.buildEgg(rarity.Color, rarity.Neon)
+local spawnNestEgg: (region: World.Region, spot: World.NestSpot) -> ()
+
+local function onSteal(player: Player, region: World.Region, spot: World.NestSpot, egg: Model, prompt: ProximityPrompt)
+	if carrying[player] then
+		notify:FireClient(player, "이미 에그를 들고 있어요!", "info")
+		return
+	end
+	if not plotOf[player] then
+		notify:FireClient(player, "빈 기지가 없어서 훔칠 수 없어요.", "danger")
+		return
+	end
+
+	prompt:Destroy() -- 다른 사람이 동시에 가져가지 못하게
+	spot.egg = nil
+	if not attachToHead(player, egg) then
+		egg:Destroy()
+		spawnNestEgg(region, spot)
+		return
+	end
+
+	-- 훔친 순간 등급 공개
+	local rarityIndex = rollRarity()
+	local rarity = Config.Rarities[rarityIndex]
+	AnimalFactory.paintEgg(egg, rarity.Color, rarity.Neon)
+	carrying[player] = { model = egg, region = region, spot = spot, rarityIndex = rarityIndex, warned = false }
+	player:SetAttribute("Carrying", `{rarity.Name} 에그`)
+	Sounds.play("Steal", egg.PrimaryPart :: BasePart)
+	notify:FireClient(player, `✨ {rarity.Name} 에그! 동물을 피해 기지로 돌아가세요`, "success")
+end
+
+spawnNestEgg = function(region: World.Region, spot: World.NestSpot)
+	if spot.egg then
+		return
+	end
+	local egg = AnimalFactory.buildEgg(Config.Egg.Color)
 	egg:PivotTo(CFrame.new(spot.position))
 	egg.Parent = region.eggs
+	spot.egg = egg
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "훔치기"
-	prompt.ObjectText = `{rarity.Name} 에그`
+	prompt.ObjectText = "??? 에그"
 	prompt.HoldDuration = 0.5
 	prompt.MaxActivationDistance = 8
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = egg.PrimaryPart
-
 	prompt.Triggered:Connect(function(player)
-		if carrying[player] then
-			notify:FireClient(player, "이미 에그를 들고 있어요!", "info")
-			return
-		end
-		if not plotOf[player] then
-			notify:FireClient(player, "빈 기지가 없어서 훔칠 수 없어요.", "danger")
-			return
-		end
-
-		prompt:Destroy() -- 다른 사람이 동시에 가져가지 못하게
-		if pickUp(player, egg) then
-			carrying[player] =
-				{ model = egg, regionIndex = region.index, rarityIndex = spot.rarityIndex, warned = false }
-			player:SetAttribute("Carrying", `{rarity.Name} 에그`)
-			notify:FireClient(
-				player,
-				`{rarity.Name} 에그를 훔쳤어요! 동물을 피해 기지로 돌아가세요`,
-				"success"
-			)
-		else
-			egg:Destroy()
-		end
-		task.delay(rarity.RespawnTime, spawnEgg, region, spot)
+		onSteal(player, region, spot, egg, prompt)
 	end)
 end
 
 for _, region in regions do
-	for _, spot in region.eggSpots do
-		spawnEgg(region, spot)
+	for _, spot in region.nestSpots do
+		spawnNestEgg(region, spot)
+	end
+end
+
+-- 들고 있던 에그가 사라질 때 (죽음, 나감): 둥지에 바로 새 에그
+local function loseCarry(player: Player)
+	local carry = carrying[player]
+	if carry then
+		carrying[player] = nil
+		player:SetAttribute("Carrying", nil)
+		carry.model:Destroy()
+		spawnNestEgg(carry.region, carry.spot)
+	end
+end
+
+-- 맞았을 때: 에그를 땅에 떨어뜨리고, 그 지역 동물이 주워서 둥지로 가져간다
+local function dropOnHit(player: Player, root: BasePart)
+	local carry = carrying[player]
+	if not carry then
+		return
+	end
+	carrying[player] = nil
+	player:SetAttribute("Carrying", nil)
+
+	local egg = carry.model
+	local weld = egg:FindFirstChild("CarryWeld", true)
+	if weld then
+		weld:Destroy()
+	end
+	for _, part in egg:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+		end
+	end
+	egg:PivotTo(CFrame.new(root.Position.X, 0.2, root.Position.Z))
+	egg.Parent = carry.region.eggs
+
+	-- 할 일이 가장 적은 동물에게 맡긴다
+	local best = nil
+	for _, chaser in chasersOf[carry.region.index] do
+		if not best or (not chaser:isBusy() and best:isBusy()) then
+			best = chaser
+		end
+	end
+	if best then
+		best:fetch({ model = egg, spot = carry.spot })
+	else
+		egg:Destroy()
+		spawnNestEgg(carry.region, carry.spot)
 	end
 end
 
@@ -154,6 +232,16 @@ local function placeOnPad(pad: World.Pad, model: Model)
 	model.Parent = pad.part
 end
 
+local function clearPad(pad: World.Pad)
+	if pad.model then
+		pad.model:Destroy()
+	end
+	pad.model = nil
+	pad.state = "empty"
+	pad.progress = 0
+	pad.label.Text = ""
+end
+
 -- 기지에 도착하면 빈 부화 자리에 에그를 놓는다
 local function tryDeposit(player: Player, plot: World.Plot, carry: Carry)
 	local pad: World.Pad? = nil
@@ -168,7 +256,7 @@ local function tryDeposit(player: Player, plot: World.Plot, carry: Carry)
 			carry.warned = true
 			notify:FireClient(
 				player,
-				"부화 자리가 꽉 찼어요! 인덱스에서 '모두 받기'를 눌러 주세요",
+				"부화 자리가 꽉 찼어요! 동물을 '놓아주기' 해서 자리를 비워 주세요",
 				"danger"
 			)
 		end
@@ -178,15 +266,16 @@ local function tryDeposit(player: Player, plot: World.Plot, carry: Carry)
 	carrying[player] = nil
 	player:SetAttribute("Carrying", nil)
 	carry.model:Destroy()
+	task.delay(Config.Egg.RespawnTime, spawnNestEgg, carry.region, carry.spot)
 
 	local rarity = Config.Rarities[carry.rarityIndex]
 	local egg = AnimalFactory.buildEgg(rarity.Color, rarity.Neon)
 	placeOnPad(pad, egg)
 	pad.model = egg
 	pad.state = "hatching"
-	pad.regionIndex = carry.regionIndex
+	pad.regionIndex = carry.region.index
 	pad.rarityIndex = carry.rarityIndex
-	pad.hatchAt = os.clock() + rarity.HatchTime
+	pad.progress = 0
 	notify:FireClient(player, `{rarity.Name} 에그 부화 시작! ({Format.duration(rarity.HatchTime)})`, "success")
 end
 
@@ -199,32 +288,40 @@ local function hatch(player: Player, plot: World.Plot, pad: World.Pad)
 	local info = region.Animals[rarity.Id]
 	local speed, money = Config.rewardFor(pad.regionIndex, pad.rarityIndex)
 
-	local animal = AnimalFactory.build(info.Kind)
+	local animal = AnimalFactory.build(info.Kind, info)
 	placeOnPad(pad, animal)
 	pad.model = animal
 	pad.state = "hatched"
 	pad.label.Text = `{info.Name}\n⚡{Format.number(speed)} 💰{Format.number(money)}`
 	pad.label.TextColor3 = rarity.Color:Lerp(Color3.new(1, 1, 1), 0.4)
 
+	-- 받은 뒤에도 동물은 남아 있다. 자리가 필요하면 주인이 놓아줄 수 있다.
+	local release = Instance.new("ProximityPrompt")
+	release.ActionText = "놓아주기"
+	release.ObjectText = info.Name
+	release.HoldDuration = 1
+	release.MaxActivationDistance = 8
+	release.RequiresLineOfSight = false
+	release.Enabled = false -- 보상을 받은 뒤에 켜진다
+	release.Parent = animal.PrimaryPart
+	release.Triggered:Connect(function(who)
+		if who == plot.owner and pad.model == animal then
+			clearPad(pad)
+			notify:FireClient(who, `{info.Name} 안녕~ 부화 자리가 하나 생겼어요`, "info")
+		end
+	end)
+
 	player:SetAttribute(`Index_{region.Id}_{rarity.Id}`, true) -- 인덱스 잠금 해제
 	updatePending(player, plot)
+	Sounds.play("Hatch", pad.part)
 	notify:FireClient(player, `{rarity.Name} {info.Name} 부화! 인덱스에서 받아 가세요`, "success")
 end
 
-local function clearPad(pad: World.Pad)
-	if pad.model then
-		pad.model:Destroy()
-	end
-	pad.model = nil
-	pad.state = "empty"
-	pad.label.Text = ""
-end
-
--- 1초마다 부화 남은 시간 표시 & 부화
+-- 1초마다 부화 진행 (밤에는 30배 빠르게)
 task.spawn(function()
 	while true do
 		task.wait(1)
-		local now = os.clock()
+		local multiplier = DayNight.hatchMultiplier()
 		for _, plot in base.plots do
 			local owner = plot.owner
 			if not owner then
@@ -232,17 +329,30 @@ task.spawn(function()
 			end
 			for _, pad in plot.pads do
 				if pad.state == "hatching" then
-					local remaining = pad.hatchAt - now
-					if remaining <= 0 then
+					local rarity = Config.Rarities[pad.rarityIndex]
+					pad.progress += multiplier
+					if pad.progress >= rarity.HatchTime then
 						hatch(owner, plot, pad)
 					else
-						local rarity = Config.Rarities[pad.rarityIndex]
-						pad.label.Text = `{rarity.Name} 에그\n{Format.countdown(remaining)}`
+						local remaining = (rarity.HatchTime - pad.progress) / multiplier
+						local moon = if multiplier > 1 then " 🌙" else ""
+						pad.label.Text = `{rarity.Name} 에그\n{Format.countdown(remaining)}{moon}`
 						pad.label.TextColor3 = Color3.new(1, 1, 1)
 					end
 				end
 			end
 		end
+	end
+end)
+
+DayNight.start(function(night)
+	if night then
+		notify:FireAllClients(
+			`🌙 밤이 되었어요! 부화가 {Config.DayNight.NightHatchMultiplier}배 빨라져요`,
+			"success"
+		)
+	else
+		notify:FireAllClients("☀️ 아침이 되었어요", "info")
 	end
 end)
 
@@ -258,11 +368,19 @@ claimAll.OnServerEvent:Connect(function(player)
 			speed += s
 			money += m
 			count += 1
-			clearPad(pad)
+
+			-- 동물은 그대로 두고 이름만 남긴다
+			pad.state = "claimed"
+			local info = Config.Regions[pad.regionIndex].Animals[Config.Rarities[pad.rarityIndex].Id]
+			pad.label.Text = info.Name
+			local release = pad.model and pad.model:FindFirstChildWhichIsA("ProximityPrompt", true)
+			if release then
+				release.Enabled = true
+			end
 		end
 	end
 	if count == 0 then
-		notify:FireClient(player, "받을 동물이 없어요. 에그를 부화시켜 보세요!", "info")
+		notify:FireClient(player, "받을 보상이 없어요. 에그를 부화시켜 보세요!", "info")
 		return
 	end
 	PlayerStats.addSpeed(player, speed)
@@ -332,7 +450,7 @@ local function onPlayerAdded(player: Player)
 	end
 
 	player.CharacterRemoving:Connect(function()
-		dropCarry(player)
+		loseCarry(player)
 	end)
 end
 
@@ -342,7 +460,7 @@ for _, player in Players:GetPlayers() do
 end
 
 Players.PlayerRemoving:Connect(function(player)
-	dropCarry(player)
+	loseCarry(player)
 	local plot = plotOf[player]
 	if plot then
 		plot.owner = nil
@@ -363,7 +481,7 @@ task.spawn(function()
 end)
 
 --------------------------------------------------------------------------------
--- 매 프레임: 러닝머신, 지역 입장 조건, 기지 도착, 쫓아오는 동물
+-- 매 프레임: 러닝머신, 지역 입장 조건, 기지 도착, 둥지를 지키는 동물
 --------------------------------------------------------------------------------
 
 local BASE_RETURN = CFrame.new(0, 4, Config.Base.Depth / 2 - 6)
@@ -404,17 +522,33 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 
-	for _, chaser in chasers do
-		local hitPlayer, direction = chaser:update(dt, targets)
+	for _, chaser in allChasers do
+		local hitPlayer, direction, returnedEgg = chaser:update(dt, targets)
 		if hitPlayer and direction then
-			local settings = Config.Chaser
-			knockback:FireClient(
-				hitPlayer,
-				direction * settings.KnockbackHorizontal + Vector3.yAxis * settings.KnockbackVertical
-			)
-			notify:FireClient(hitPlayer, "동물에게 맞았어요! 💥", "danger")
+			local character = hitPlayer.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if root then
+				local settings = Config.Chaser
+				Sounds.play("Hit", root)
+				dropOnHit(hitPlayer, root)
+				knockback:FireClient(
+					hitPlayer,
+					direction * settings.KnockbackHorizontal + Vector3.yAxis * settings.KnockbackVertical
+				)
+				notify:FireClient(
+					hitPlayer,
+					"💥 맞아서 에그를 떨어뜨렸어요! 동물이 다시 가져가요",
+					"danger"
+				)
+			end
+		end
+		if returnedEgg then
+			returnedEgg.model:Destroy()
+			spawnNestEgg(chaser.region, returnedEgg.spot)
 		end
 	end
 end)
 
-print(`[{Config.GameName}] 서버 시작! 러닝머신으로 속도를 올리고 숲에서 에그를 훔쳐 오세요.`)
+print(
+	`[{Config.GameName}] 서버 시작! 러닝머신으로 속도를 올리고 에그 둥지에서 에그를 훔쳐 오세요.`
+)
