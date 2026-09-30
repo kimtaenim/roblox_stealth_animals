@@ -1,6 +1,7 @@
 @echo off
 chcp 65001 > nul
-title Stealth Animals 시작
+title Stealth Animals 시작 (율이: oompaloompa0730)
+set "ACCOUNT=oompaloompa0730"
 rem 이 파일이 있는 폴더(프로젝트 폴더)에서 실행
 cd /d "%~dp0"
 
@@ -37,8 +38,10 @@ if defined PLACE (
 )
 
 echo.
-echo 준비 끝! Studio에서 플러그인 탭 - Rojo - Connect 를 누르세요.
-timeout /t 8 > nul
+echo 준비 끝!
+echo  1. Studio 오른쪽 위 계정이 %ACCOUNT% 인지 확인하세요. 다르면 로그아웃 후 %ACCOUNT% 로 로그인.
+echo  2. 편집 상태에서 플러그인 탭 - Rojo - Connect 를 누르세요.
+timeout /t 15 > nul
 exit /b 0
 
 :openStudio
