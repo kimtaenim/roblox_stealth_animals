@@ -375,6 +375,17 @@ function World.buildRegion(index: number): Region
 		config.GroundMaterial
 	)
 
+	-- 앞 지역(또는 기지)에서 이어지는 길. 멀리 있는 지역은 Baseplate 밖이라 길이 없으면 떨어진다.
+	local pathStart = if index == 1 then Config.Base.Depth / 2 else startZ - layout.Gap
+	makePart(
+		folder,
+		"Path",
+		Vector3.new(30, 0.2, startZ - pathStart),
+		Vector3.new(0, 0.1, (pathStart + startZ) / 2),
+		Color3.fromRGB(170, 150, 120),
+		Enum.Material.Pebble
+	)
+
 	local entrance = makeSignPost(folder, Vector3.new(0, 1, startZ))
 	local required = if config.RequiredSpeed > 0
 		then `필요 속도 ⚡{Format.number(config.RequiredSpeed)}`
