@@ -15,6 +15,7 @@ export type Data = {
 	treadmillLevel: number?,
 	index: { string }?, -- 잠금 해제한 인덱스 ("Forest_Common" 등)
 	pets: { { r: number, k: number, c: boolean } }?, -- 기지 동물 (지역, 등급, 보상 받았는지)
+	inventory: { { r: number, k: number, c: boolean } }?, -- 인벤토리에 보관 중인 동물
 	eggs: { { r: number, k: number, p: number } }?, -- 부화 중인 에그 (지역, 등급, 진행)
 }
 

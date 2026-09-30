@@ -1,4 +1,5 @@
 -- 화면 UI: 내 정보, 운반 중 안내, 알림 메시지, 인덱스(모두 받기), 업그레이드 안내 문구
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -8,6 +9,7 @@ local Format = require(ReplicatedStorage.Shared.Format)
 local player = Players.LocalPlayer
 local notify = ReplicatedStorage:WaitForChild("Notify") :: RemoteEvent
 local claimAll = ReplicatedStorage:WaitForChild("ClaimAll") :: RemoteEvent
+local equipBest = ReplicatedStorage:WaitForChild("EquipBest") :: RemoteEvent
 
 local NOTIFY_COLORS = {
 	info = Color3.fromRGB(255, 255, 255),
@@ -250,14 +252,138 @@ local function refreshIndex()
 	indexButton.Text = if pendingSpeed > 0 or pendingMoney > 0 then "📖 인덱스 ❗" else "📖 인덱스"
 end
 
+claimButton.Activated:Connect(function()
+	claimAll:FireServer()
+end)
+
+-- 펫 / 인벤토리 ---------------------------------------------------------------
+-- 서버가 Player 속성 BasePets, Inventory 에 JSON 으로 목록을 보내 준다: { { n = 이름, k = 등급, c = 마릿수 } }
+
+local function makeListPanel(titleText: string): (Frame, ScrollingFrame, TextLabel, TextButton)
+	local frame = Instance.new("Frame")
+	frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	frame.Position = UDim2.fromScale(0.5, 0.5)
+	frame.Size = UDim2.fromOffset(460, 420)
+	frame.BackgroundColor3 = Color3.fromRGB(30, 32, 40)
+	frame.Visible = false
+	frame.Parent = gui
+	Instance.new("UICorner").Parent = frame
+
+	local heading = makeText(frame, 24)
+	heading.Text = titleText
+	heading.Position = UDim2.fromOffset(0, 10)
+	heading.Size = UDim2.new(1, 0, 0, 32)
+
+	local summary = makeText(frame, 16)
+	summary.Position = UDim2.fromOffset(0, 44)
+	summary.Size = UDim2.new(1, 0, 0, 20)
+	summary.TextColor3 = Color3.fromRGB(200, 200, 210)
+
+	local close = makeButton(frame, "X", Color3.fromRGB(200, 70, 70))
+	close.AnchorPoint = Vector2.new(1, 0)
+	close.Position = UDim2.new(1, -10, 0, 10)
+	close.Size = UDim2.fromOffset(36, 36)
+	close.Activated:Connect(function()
+		frame.Visible = false
+	end)
+
+	local rows = Instance.new("ScrollingFrame")
+	rows.Position = UDim2.fromOffset(16, 72)
+	rows.Size = UDim2.new(1, -32, 1, -150)
+	rows.BackgroundTransparency = 1
+	rows.BorderSizePixel = 0
+	rows.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	rows.CanvasSize = UDim2.new()
+	rows.ScrollBarThickness = 6
+	rows.Parent = frame
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 4)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = rows
+
+	return frame, rows, summary, close
+end
+
+local function fillRows(rows: ScrollingFrame, json: string?): number
+	for _, child in rows:GetChildren() do
+		if child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+	local ok, groups = pcall(HttpService.JSONDecode, HttpService, json or "[]")
+	if not ok or type(groups) ~= "table" then
+		groups = {}
+	end
+	local total = 0
+	for i, group in groups do
+		local rarity = Config.Rarities[group.k] or Config.Rarities[1]
+		local row = makeText(rows, 18)
+		row.LayoutOrder = i
+		row.Size = UDim2.new(1, -8, 0, 26)
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.Text = `[{rarity.Name}] {group.n}  ×{group.c}`
+		row.TextColor3 = rarity.Color:Lerp(Color3.new(1, 1, 1), 0.35)
+		total += group.c
+	end
+	if #groups == 0 then
+		local row = makeText(rows, 18)
+		row.Size = UDim2.new(1, -8, 0, 26)
+		row.Text = "아직 없어요"
+		row.TextColor3 = Color3.fromRGB(150, 150, 150)
+	end
+	return total
+end
+
+local petsPanel, petRows, petSummary = makeListPanel("🐾 펫 (기지에서 돌아다니는 동물)")
+local equipButton = makeButton(petsPanel, "⭐ 최고 장비", Color3.fromRGB(230, 160, 40))
+equipButton.AnchorPoint = Vector2.new(0.5, 1)
+equipButton.Position = UDim2.new(0.5, 0, 1, -16)
+equipButton.Size = UDim2.fromOffset(300, 50)
+equipButton.Activated:Connect(function()
+	equipBest:FireServer()
+end)
+
+local inventoryPanel, inventoryRows, inventorySummary = makeListPanel("🎒 인벤토리 (보관 중인 동물)")
+
+local function refreshPets()
+	local count = fillRows(petRows, player:GetAttribute("BasePets"))
+	petSummary.Text =
+		`기지 {count}/{Config.Base.MaxPets}마리 · 최고 장비를 누르면 강한 녀석이 기지에, 약한 녀석은 인벤토리로`
+	local stored = fillRows(inventoryRows, player:GetAttribute("Inventory"))
+	inventorySummary.Text = `보관 중 {stored}마리 · 펫 창의 ⭐ 최고 장비로 정리할 수 있어요`
+end
+
+-- 왼쪽 버튼들: 인덱스 · 펫 · 인벤토리 (창은 하나만 열림)
+local petsButton = makeButton(gui, "🐾 펫", Color3.fromRGB(230, 140, 60))
+petsButton.AnchorPoint = Vector2.new(0, 0.5)
+petsButton.Position = UDim2.new(0, 16, 0.5, 60)
+petsButton.Size = UDim2.fromOffset(130, 50)
+
+local inventoryButton = makeButton(gui, "🎒 인벤토리", Color3.fromRGB(120, 90, 200))
+inventoryButton.AnchorPoint = Vector2.new(0, 0.5)
+inventoryButton.Position = UDim2.new(0, 16, 0.5, 120)
+inventoryButton.Size = UDim2.fromOffset(130, 50)
+
+local allPanels = { panel, petsPanel, inventoryPanel }
+local function toggle(target: Frame)
+	local show = not target.Visible
+	for _, other in allPanels do
+		other.Visible = false
+	end
+	target.Visible = show
+end
+
 indexButton.Activated:Connect(function()
-	panel.Visible = not panel.Visible
+	toggle(panel)
+end)
+petsButton.Activated:Connect(function()
+	toggle(petsPanel)
+end)
+inventoryButton.Activated:Connect(function()
+	toggle(inventoryPanel)
 end)
 closeButton.Activated:Connect(function()
 	panel.Visible = false
-end)
-claimButton.Activated:Connect(function()
-	claimAll:FireServer()
 end)
 
 -- 러닝머신 업그레이드 안내 문구 (내 레벨에 맞게, 내 화면에서만 바뀜) ------------
@@ -293,6 +419,8 @@ player.AttributeChanged:Connect(function(name)
 		refreshUpgradePrompt()
 	elseif name == "Carrying" then
 		refreshCarry()
+	elseif name == "BasePets" or name == "Inventory" then
+		refreshPets()
 	else
 		refreshIndex()
 	end
@@ -300,6 +428,7 @@ end)
 refreshInfo()
 refreshCarry()
 refreshIndex()
+refreshPets()
 
 -- 조작법 ---------------------------------------------------------------------
 local help = makeText(gui, 16)

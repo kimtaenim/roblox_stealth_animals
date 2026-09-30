@@ -25,6 +25,7 @@ end
 local notify = makeRemote("Notify") -- 서버→클라: (text, kind: "info" | "success" | "danger")
 local knockback = makeRemote("Knockback") -- 서버→클라: (velocity)
 local claimAll = makeRemote("ClaimAll") -- 클라→서버: 인덱스의 "모두 받기"
+local equipBest = makeRemote("EquipBest") -- 클라→서버: 펫 창의 "최고 장비"
 
 local base = World.buildBase()
 local regions: { World.Region } = {}
@@ -290,11 +291,16 @@ local function hatch(player: Player, pad: World.Pad)
 	local position = pad.part.Position
 	clearPad(pad)
 
-	Pets.spawn(player, regionIndex, rarityIndex, false, position)
+	local moved = Pets.add(player, { regionIndex = regionIndex, rarityIndex = rarityIndex, claimed = false }, position)
 	player:SetAttribute(`Index_{region.Id}_{rarity.Id}`, true) -- 인덱스 잠금 해제
 	updatePending(player)
 	Sounds.play("Hatch", pad.part)
-	notify:FireClient(player, `{rarity.Name} {info.Name} 부화! 인덱스에서 보상을 받으세요`, "success")
+	local where = "인덱스에서 보상을 받으세요"
+	if moved then
+		local movedInfo = Config.Regions[moved.regionIndex].Animals[Config.Rarities[moved.rarityIndex].Id]
+		where = `기지가 꽉 차서 {movedInfo.Name}(이)가 인벤토리로 갔어요`
+	end
+	notify:FireClient(player, `{rarity.Name} {info.Name} 부화! {where}`, "success")
 end
 
 -- 1초마다 부화 진행 (밤에는 30배 빠르게)
@@ -333,6 +339,18 @@ DayNight.start(function(night)
 	else
 		notify:FireAllClients("☀️ 아침이 되었어요", "info")
 	end
+end)
+
+equipBest.OnServerEvent:Connect(function(player)
+	if not PlayerStats.get(player) then
+		return
+	end
+	Pets.equipBest(player)
+	notify:FireClient(
+		player,
+		"⭐ 가장 강한 동물들을 기지에 두고, 나머지는 인벤토리에 넣었어요",
+		"success"
+	)
 end)
 
 claimAll.OnServerEvent:Connect(function(player)
@@ -406,10 +424,7 @@ local function collectSaveData(player: Player): SaveData.Data?
 		end
 	end
 
-	local pets = {}
-	for _, pet in Pets.list(player) do
-		table.insert(pets, { r = pet.regionIndex, k = pet.rarityIndex, c = pet.claimed })
-	end
+	local pets, inventory = Pets.serialize(player)
 
 	local eggs = {}
 	local plot = plotOf[player]
@@ -427,6 +442,7 @@ local function collectSaveData(player: Player): SaveData.Data?
 		treadmillLevel = stats.treadmillLevel,
 		index = index,
 		pets = pets,
+		inventory = inventory,
 		eggs = eggs,
 	}
 end
@@ -485,11 +501,18 @@ local function onPlayerAdded(player: Player)
 
 	-- 저장된 동물과 부화 중이던 에그 되살리기
 	local savedPets: { { r: number, k: number, c: boolean } } = data.pets or {}
+	local savedInventory: { { r: number, k: number, c: boolean } } = data.inventory or {}
 	for _, pet in savedPets do
 		if isValid(pet.r, pet.k) then
-			Pets.spawn(player, pet.r, pet.k, pet.c == true)
+			Pets.add(player, { regionIndex = pet.r, rarityIndex = pet.k, claimed = pet.c == true })
 		end
 	end
+	for _, pet in savedInventory do
+		if isValid(pet.r, pet.k) then
+			Pets.store(player, { regionIndex = pet.r, rarityIndex = pet.k, claimed = pet.c == true })
+		end
+	end
+	Pets.publish(player)
 	local plot = plotOf[player]
 	if plot then
 		local savedEggs: { { r: number, k: number, p: number } } = data.eggs or {}
