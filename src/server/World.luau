@@ -1,4 +1,5 @@
--- 맵 생성: 기지(출발선·러닝머신·업그레이드 판매대·부화 자리)와 지역(바닥·꾸미기·에그 둥지·표지판).
+-- 맵 생성: 기지(초록 잔디·울타리·출발선·러닝머신·업그레이드 판매대·부화 자리)와
+-- 지역(바닥·꾸미기·에그 둥지·표지판). 기지와 지역은 폭이 같고 경계선에서 바로 이어진다.
 -- 나중에 Studio에서 직접 맵을 꾸미게 되면 이 부분을 교체하면 된다.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -7,11 +8,11 @@ local Format = require(ReplicatedStorage.Shared.Format)
 
 local World = {}
 
--- 부화 자리 상태: 비어 있음 → 부화 중 → 부화함(보상 안 받음) → 받음(동물은 계속 남아 있음)
+-- 부화 자리: 에그가 부화하는 동안만 쓰고, 부화하면 동물은 기지를 돌아다닌다
 export type Pad = {
 	part: BasePart,
 	label: TextLabel,
-	state: "empty" | "hatching" | "hatched" | "claimed",
+	state: "empty" | "hatching",
 	model: Model?,
 	regionIndex: number,
 	rarityIndex: number,
@@ -84,6 +85,7 @@ local function makeLabel(
 	label.Parent = billboard
 	return label
 end
+World.makeLabel = makeLabel
 
 -- 보이지 않는 표지판 기둥 (글자만 띄우기)
 local function makeSignPost(parent: Instance, position: Vector3): Part
@@ -129,7 +131,7 @@ local function buildPlot(parent: Instance, index: number): Plot
 			)
 			table.insert(pads, {
 				part = part,
-				label = makeLabel(part, 6, 140, 50, "", 60),
+				label = makeLabel(part, 5, 140, 50, "", 60),
 				state = "empty",
 				model = nil,
 				regionIndex = 0,
@@ -148,7 +150,7 @@ local function buildPlot(parent: Instance, index: number): Plot
 	}
 end
 
--- 러닝머신: 벨트 + 양옆과 앞쪽 방벽. 뒤쪽은 뚫려 있어서 달리지 않으면 밀려 떨어진다.
+-- 러닝머신: 올라가 있으면 달리는 동작을 하면서 속도가 오른다 (밀려나지 않음). 밝은 방벽으로 둘러싼다.
 local function buildTreadmill(parent: Instance, x: number): BasePart
 	local length, width, wallHeight = 16, 6, 4
 	local belt = makePart(
@@ -159,26 +161,19 @@ local function buildTreadmill(parent: Instance, x: number): BasePart
 		Color3.fromRGB(40, 40, 45),
 		Enum.Material.Rubber
 	)
-	belt.AssemblyLinearVelocity = Vector3.new(0, 0, -Config.Treadmill.BeltSpeed) -- 컨베이어 벨트
 
 	local wallColor = Config.Treadmill.WallColor
 	local wallY = 1 + wallHeight / 2
-	makePart(
-		parent,
-		"TreadmillWall",
-		Vector3.new(1, wallHeight, length),
-		Vector3.new(x - width / 2 - 0.5, wallY, 10),
-		wallColor,
-		Enum.Material.Neon
-	)
-	makePart(
-		parent,
-		"TreadmillWall",
-		Vector3.new(1, wallHeight, length),
-		Vector3.new(x + width / 2 + 0.5, wallY, 10),
-		wallColor,
-		Enum.Material.Neon
-	)
+	for _, side in { -1, 1 } do
+		makePart(
+			parent,
+			"TreadmillWall",
+			Vector3.new(1, wallHeight, length),
+			Vector3.new(x + side * (width / 2 + 0.5), wallY, 10),
+			wallColor,
+			Enum.Material.Neon
+		)
+	end
 	local front = makePart(
 		parent,
 		"TreadmillWall",
@@ -191,6 +186,36 @@ local function buildTreadmill(parent: Instance, x: number): BasePart
 	return belt
 end
 
+-- 기지 울타리: 옆과 뒤는 막고, 출발선 쪽은 가운데에 문
+local function buildBaseFence(parent: Instance)
+	local base = Config.Base
+	local height = 4
+	local halfW, halfD = base.Width / 2, base.Depth / 2
+	local color = base.FenceColor
+	local y = height / 2
+
+	makePart(parent, "Fence", Vector3.new(base.Width, height, 1), Vector3.new(0, y, -halfD), color, Enum.Material.Wood)
+	for _, side in { -1, 1 } do
+		makePart(
+			parent,
+			"Fence",
+			Vector3.new(1, height, base.Depth),
+			Vector3.new(side * halfW, y, 0),
+			color,
+			Enum.Material.Wood
+		)
+		local segment = (base.Width - base.GateWidth) / 2
+		makePart(
+			parent,
+			"Fence",
+			Vector3.new(segment, height, 1),
+			Vector3.new(side * (base.GateWidth / 2 + segment / 2), y, halfD - 1.5),
+			color,
+			Enum.Material.Wood
+		)
+	end
+end
+
 function World.buildBase(): Base
 	local base = Config.Base
 	local folder = Instance.new("Folder")
@@ -201,9 +226,10 @@ function World.buildBase(): Base
 		"Ground",
 		Vector3.new(base.Width, 0.2, base.Depth),
 		Vector3.new(0, 0.1, 0),
-		Color3.fromRGB(200, 190, 160),
-		Enum.Material.Concrete
+		base.GroundColor,
+		Enum.Material.Grass
 	)
+	buildBaseFence(folder)
 
 	-- 출발선
 	local line = makePart(
@@ -242,6 +268,14 @@ end
 
 function World.isInsideBase(position: Vector3): boolean
 	return math.abs(position.X) <= Config.Base.Width / 2 and math.abs(position.Z) <= Config.Base.Depth / 2
+end
+
+-- 기지 동물이 돌아다닐 다음 목적지 (울타리 안쪽)
+function World.randomBaseSpot(random: Random): Vector3
+	local margin = 6
+	local halfW = Config.Base.Width / 2 - margin
+	local halfD = Config.Base.Depth / 2 - margin
+	return Vector3.new(random:NextNumber(-halfW, halfW), 0.2, random:NextNumber(-halfD, halfD))
 end
 
 function World.isOnTreadmill(base: Base, position: Vector3): boolean
@@ -358,7 +392,7 @@ end
 function World.buildRegion(index: number): Region
 	local config = Config.Regions[index]
 	local layout = Config.RegionLayout
-	local startZ = layout.FirstStartZ + (index - 1) * (layout.Length + layout.Gap)
+	local startZ = layout.FirstStartZ + (index - 1) * layout.Length
 	local center = Vector3.new(0, 0, startZ + layout.Length / 2)
 	local size = Vector3.new(layout.Width, 0, layout.Length)
 	local nestCenter = Vector3.new(0, 0.2, startZ + layout.NestOffset)
@@ -375,27 +409,27 @@ function World.buildRegion(index: number): Region
 		config.GroundMaterial
 	)
 
-	-- 앞 지역(또는 기지)에서 이어지는 길. 멀리 있는 지역은 Baseplate 밖이라 길이 없으면 떨어진다.
-	local pathStart = if index == 1 then Config.Base.Depth / 2 else startZ - layout.Gap
-	makePart(
+	-- 경계선 표시
+	local border = makePart(
 		folder,
-		"Path",
-		Vector3.new(30, 0.2, startZ - pathStart),
-		Vector3.new(0, 0.1, (pathStart + startZ) / 2),
-		Color3.fromRGB(170, 150, 120),
-		Enum.Material.Pebble
+		"Border",
+		Vector3.new(size.X, 0.25, 1),
+		Vector3.new(0, 0.12, startZ),
+		Color3.new(1, 1, 1),
+		Enum.Material.Neon
 	)
-
-	local entrance = makeSignPost(folder, Vector3.new(0, 1, startZ))
-	local required = if config.RequiredSpeed > 0
-		then `필요 속도 ⚡{Format.number(config.RequiredSpeed)}`
-		else "누구나 입장 가능"
+	border.Transparency = 0.5
+	local recommended = if config.RecommendedSpeed > 0
+		then `추천 속도 ⚡{Format.number(config.RecommendedSpeed)}`
+		else "처음 오는 곳"
 	local bossText = if config.Boss then `\n⚠️ 보스: {config.Boss.Name}` else ""
-	makeLabel(entrance, 8, 340, 90, `{config.Emoji} {config.Name}\n{required}{bossText}`, 250)
+	-- 지역 이름 표지판 (출발선 표지판과 겹치지 않게 옆쪽에)
+	local regionSign = makeSignPost(folder, Vector3.new(60, 1, startZ + 3))
+	makeLabel(regionSign, 8, 340, 90, `{config.Emoji} {config.Name}\n{recommended}{bossText}`, 250)
 
-	-- 꾸미기 (가운데 길과 둥지 주변은 비워 둔다)
+	-- 꾸미기 (가운데 줄과 둥지 주변은 비워 둔다)
 	local random = Random.new(index)
-	for _ = 1, 30 do
+	for _ = 1, 70 do
 		local side = if random:NextNumber() < 0.5 then -1 else 1
 		local position =
 			Vector3.new(side * random:NextNumber(24, size.X / 2 - 4), 0, startZ + random:NextNumber(5, size.Z - 5))
@@ -425,12 +459,10 @@ function World.buildRegion(index: number): Region
 	local nestSign = makeSignPost(folder, nestCenter + Vector3.new(0, 1, -10))
 	makeLabel(nestSign, 6, 420, 100, `🥚 {config.Name} 에그 둥지\n훔치면 등급 공개!\n{oddsText()}`, 150)
 
-	-- 둥지를 지키는 동물 자리 (둥지 둘레)
+	-- 지키는 동물이 처음 서 있는 자리 (둥지에서 떨어진 곳)
 	local chaserHomes = {}
-	local chaserCount = #config.Chasers
-	for i = 1, chaserCount do
-		local angle = (i / chaserCount) * math.pi * 2 + math.pi / 4
-		table.insert(chaserHomes, nestCenter + Vector3.new(math.cos(angle) * 16, 0, math.sin(angle) * 16))
+	for i = 1, #config.Chasers do
+		table.insert(chaserHomes, nestCenter + Vector3.new((i - 1) * 20 - 30, 0, -40))
 	end
 
 	local eggs = Instance.new("Folder")
@@ -446,7 +478,7 @@ function World.buildRegion(index: number): Region
 		nestCenter = nestCenter,
 		nestSpots = nestSpots,
 		chaserHomes = chaserHomes,
-		bossHome = nestCenter + Vector3.new(0, 0, 24),
+		bossHome = nestCenter + Vector3.new(30, 0, -40),
 	}
 end
 
@@ -455,6 +487,24 @@ function World.isInsideRegion(region: Region, position: Vector3, margin: number?
 	local extra = margin or 0
 	local offset = position - region.center
 	return math.abs(offset.X) <= region.size.X / 2 + extra and math.abs(offset.Z) <= region.size.Z / 2 + extra
+end
+
+-- 지역 안에서 어슬렁거릴 다음 목적지 (둥지 가까이는 피한다)
+function World.randomWanderSpot(region: Region, random: Random): Vector3
+	local keepOut = Config.Chaser.NestKeepOut + 5
+	for _ = 1, 20 do
+		local spot = region.center
+			+ Vector3.new(
+				random:NextNumber(-region.size.X / 2 + 10, region.size.X / 2 - 10),
+				0,
+				random:NextNumber(-region.size.Z / 2 + 10, region.size.Z / 2 - 10)
+			)
+		spot = Vector3.new(spot.X, region.nestCenter.Y, spot.Z)
+		if (spot - region.nestCenter).Magnitude > keepOut then
+			return spot
+		end
+	end
+	return region.nestCenter + Vector3.new(0, 0, -keepOut - 10)
 end
 
 return World

@@ -14,6 +14,8 @@ type Shape = {
 	legWidth: number,
 	legCount: number?, -- 기본 4, 새는 2, 물고기는 0
 	lift: number?, -- 바닥에서 띄우는 높이 (물고기)
+	headOffset: Vector3?, -- 머리를 기본 위치에서 더 옮길 때 (목이 긴 공룡)
+	tintLegs: boolean?, -- 다리 2개인 동물도 다리를 몸 색으로 (새는 부리 색)
 	color: Color3,
 	noseSize: Vector3,
 	noseColor: Color3,
@@ -268,6 +270,168 @@ local SHAPES: { [string]: Shape } = {
 		noseColor = Color3.fromRGB(255, 120, 150),
 		extras = join(ears(0.45, 0.6, 0.45, 0.9), nineTails()),
 	},
+	-- 드래곤: 날개, 뿔, 꼬리
+	Dragon = {
+		body = Vector3.new(2.4, 2, 4),
+		head = Vector3.new(1.6, 1.4, 1.8),
+		legLength = 1.4,
+		legWidth = 0.6,
+		color = Color3.fromRGB(60, 160, 80),
+		noseSize = Vector3.new(0.9, 0.6, 0.6),
+		noseColor = Color3.fromRGB(40, 110, 60),
+		extras = {
+			{ size = Vector3.new(4, 0.2, 2.4), offset = Vector3.new(-3.2, 1.2, 0), anchor = "body", tint = true }, -- 날개
+			{ size = Vector3.new(4, 0.2, 2.4), offset = Vector3.new(3.2, 1.2, 0), anchor = "body", tint = true },
+			{ size = Vector3.new(0.25, 0.8, 0.25), offset = Vector3.new(-0.4, 1, 0.3), color = IVORY, anchor = "head" }, -- 뿔
+			{ size = Vector3.new(0.25, 0.8, 0.25), offset = Vector3.new(0.4, 1, 0.3), color = IVORY, anchor = "head" },
+			{ size = Vector3.new(0.7, 0.7, 3), offset = Vector3.new(0, 0.2, 3.3), anchor = "body", tint = true }, -- 꼬리
+		},
+	},
+	Pegasus = {
+		body = Vector3.new(2.2, 2.2, 3.8),
+		head = Vector3.new(1.4, 1.6, 1.8),
+		legLength = 2.2,
+		legWidth = 0.5,
+		color = WHITE,
+		noseSize = Vector3.new(0.9, 0.6, 0.3),
+		noseColor = PINK,
+		extras = {
+			{ size = Vector3.new(3, 0.2, 2), offset = Vector3.new(-2.6, 1.4, -0.2), anchor = "body", tint = true }, -- 날개
+			{ size = Vector3.new(3, 0.2, 2), offset = Vector3.new(2.6, 1.4, -0.2), anchor = "body", tint = true },
+			{
+				size = Vector3.new(0.3, 1, 1.4),
+				offset = Vector3.new(0, 0.6, 0.8),
+				color = Color3.fromRGB(150, 200, 255),
+				anchor = "head",
+			}, -- 갈기
+		},
+	},
+	Turtle = {
+		body = Vector3.new(2.4, 1, 2.8),
+		head = Vector3.new(0.9, 0.8, 1),
+		legLength = 0.5,
+		legWidth = 0.6,
+		color = Color3.fromRGB(110, 170, 100),
+		noseSize = Vector3.new(0.3, 0.2, 0.1),
+		noseColor = Color3.fromRGB(60, 100, 60),
+		headOffset = Vector3.new(0, -0.3, 0),
+		extras = {
+			{
+				size = Vector3.new(2.8, 1.2, 3.1),
+				offset = Vector3.new(0, 0.6, 0),
+				color = Color3.fromRGB(110, 90, 50),
+				anchor = "body",
+			}, -- 등껍질
+		},
+	},
+	Scorpion = {
+		body = Vector3.new(2, 0.8, 2.6),
+		head = Vector3.new(1.4, 0.6, 1),
+		legLength = 0.4,
+		legWidth = 0.3,
+		color = Color3.fromRGB(70, 45, 30),
+		noseSize = Vector3.new(0.3, 0.2, 0.1),
+		noseColor = Color3.fromRGB(40, 25, 15),
+		headOffset = Vector3.new(0, -0.4, 0),
+		extras = {
+			{ size = Vector3.new(0.8, 0.5, 1.2), offset = Vector3.new(-1, 0, -0.9), anchor = "head", tint = true }, -- 집게
+			{ size = Vector3.new(0.8, 0.5, 1.2), offset = Vector3.new(1, 0, -0.9), anchor = "head", tint = true },
+			{ size = Vector3.new(0.5, 0.5, 1.2), offset = Vector3.new(0, 0.5, 1.6), anchor = "body", tint = true }, -- 꼬리
+			{ size = Vector3.new(0.5, 1.4, 0.5), offset = Vector3.new(0, 1.3, 2.1), anchor = "body", tint = true },
+			{
+				size = Vector3.new(0.4, 0.4, 0.8),
+				offset = Vector3.new(0, 2.1, 1.7),
+				color = Color3.fromRGB(200, 40, 40),
+				anchor = "body",
+			}, -- 독침
+		},
+	},
+	Kangaroo = {
+		body = Vector3.new(1.6, 2.6, 1.8),
+		head = Vector3.new(1, 1.1, 1.4),
+		legLength = 1.2,
+		legWidth = 0.5,
+		legCount = 2,
+		tintLegs = true,
+		color = Color3.fromRGB(190, 130, 80),
+		noseSize = Vector3.new(0.4, 0.3, 0.2),
+		noseColor = BLACK,
+		extras = join(ears(0.3, 0.8, 0.3, 0.8), {
+			{ size = Vector3.new(0.6, 0.6, 2.4), offset = Vector3.new(0, -0.9, 1.8), anchor = "body", tint = true }, -- 꼬리
+			{ size = Vector3.new(0.3, 1, 0.3), offset = Vector3.new(-0.6, 0, -1), anchor = "body", tint = true }, -- 앞발
+			{ size = Vector3.new(0.3, 1, 0.3), offset = Vector3.new(0.6, 0, -1), anchor = "body", tint = true },
+		}),
+	},
+	Trex = {
+		body = Vector3.new(2.4, 2.6, 4),
+		head = Vector3.new(1.8, 1.8, 2.4),
+		legLength = 2.6,
+		legWidth = 0.9,
+		legCount = 2,
+		tintLegs = true,
+		color = Color3.fromRGB(80, 130, 70),
+		noseSize = Vector3.new(1.2, 0.3, 0.3),
+		noseColor = WHITE,
+		headOffset = Vector3.new(0, 0.8, 0),
+		extras = {
+			{ size = Vector3.new(0.3, 0.9, 0.3), offset = Vector3.new(-0.9, -0.3, -1.8), anchor = "body", tint = true }, -- 짧은 팔
+			{ size = Vector3.new(0.3, 0.9, 0.3), offset = Vector3.new(0.9, -0.3, -1.8), anchor = "body", tint = true },
+			{ size = Vector3.new(1, 1, 4), offset = Vector3.new(0, 0, 3.8), anchor = "body", tint = true }, -- 꼬리
+		},
+	},
+	Triceratops = {
+		body = Vector3.new(3, 2.6, 4.4),
+		head = Vector3.new(2.2, 2, 2),
+		legLength = 1.4,
+		legWidth = 0.9,
+		color = Color3.fromRGB(150, 120, 80),
+		noseSize = Vector3.new(0.6, 0.5, 0.3),
+		noseColor = Color3.fromRGB(110, 85, 55),
+		headOffset = Vector3.new(0, -0.6, 0),
+		extras = {
+			{ size = Vector3.new(3.2, 2.2, 0.4), offset = Vector3.new(0, 0.9, 0.8), anchor = "head", tint = true }, -- 목 방패
+			{
+				size = Vector3.new(0.3, 0.3, 1.4),
+				offset = Vector3.new(-0.6, 0.6, -1.4),
+				color = IVORY,
+				anchor = "head",
+			}, -- 뿔
+			{ size = Vector3.new(0.3, 0.3, 1.4), offset = Vector3.new(0.6, 0.6, -1.4), color = IVORY, anchor = "head" },
+			{ size = Vector3.new(0.3, 0.6, 0.3), offset = Vector3.new(0, 0.1, -1.2), color = IVORY, anchor = "head" },
+		},
+	},
+	Stegosaurus = {
+		body = Vector3.new(2.6, 2.4, 4.6),
+		head = Vector3.new(1, 1, 1.4),
+		legLength = 1.4,
+		legWidth = 0.8,
+		color = Color3.fromRGB(110, 150, 90),
+		noseSize = Vector3.new(0.4, 0.3, 0.2),
+		noseColor = Color3.fromRGB(80, 110, 60),
+		headOffset = Vector3.new(0, -1, 0),
+		extras = {
+			{ size = Vector3.new(0.3, 1.2, 1), offset = Vector3.new(0, 1.6, -1.6), color = ORANGE, anchor = "body" }, -- 등판
+			{ size = Vector3.new(0.3, 1.4, 1), offset = Vector3.new(0, 1.7, -0.5), color = ORANGE, anchor = "body" },
+			{ size = Vector3.new(0.3, 1.4, 1), offset = Vector3.new(0, 1.7, 0.6), color = ORANGE, anchor = "body" },
+			{ size = Vector3.new(0.3, 1.2, 1), offset = Vector3.new(0, 1.6, 1.7), color = ORANGE, anchor = "body" },
+			{ size = Vector3.new(0.8, 0.8, 3), offset = Vector3.new(0, -0.2, 3.6), anchor = "body", tint = true }, -- 꼬리
+		},
+	},
+	-- 목이 긴 공룡 (브라키오사우루스)
+	LongNeck = {
+		body = Vector3.new(3, 2.8, 5),
+		head = Vector3.new(1, 1, 1.6),
+		legLength = 3,
+		legWidth = 1,
+		color = Color3.fromRGB(120, 140, 170),
+		noseSize = Vector3.new(0.4, 0.3, 0.2),
+		noseColor = Color3.fromRGB(90, 105, 130),
+		headOffset = Vector3.new(0, 5, 0.4),
+		extras = {
+			{ size = Vector3.new(0.9, 5, 0.9), offset = Vector3.new(0, 3.4, -2.4), anchor = "body", tint = true }, -- 목
+			{ size = Vector3.new(1, 1, 4), offset = Vector3.new(0, 0, 4.4), anchor = "body", tint = true }, -- 꼬리
+		},
+	},
 }
 
 local function makePart(
@@ -357,6 +521,9 @@ function AnimalFactory.build(kind: string, look: Look?): Model
 	if kind == "Fish" then
 		headCenter = Vector3.new(0, bodyCenter.Y, headCenter.Z)
 	end
+	if shape.headOffset then
+		headCenter += shape.headOffset
+	end
 	makePart(model, "Head", shape.head, headCenter, color, neon)
 
 	local faceZ = headCenter.Z - shape.head.Z / 2
@@ -389,7 +556,8 @@ function AnimalFactory.build(kind: string, look: Look?): Model
 		legSpots =
 			{ Vector2.new(-legX, -legZ), Vector2.new(legX, -legZ), Vector2.new(-legX, legZ), Vector2.new(legX, legZ) }
 	end
-	local legColor = if legCount == 2 then shape.noseColor else color
+	local birdLegs = legCount == 2 and not shape.tintLegs
+	local legColor = if birdLegs then shape.noseColor else color
 	for _, spot in legSpots do
 		makePart(
 			model,
@@ -397,7 +565,7 @@ function AnimalFactory.build(kind: string, look: Look?): Model
 			Vector3.new(shape.legWidth, shape.legLength, shape.legWidth),
 			Vector3.new(spot.X, shape.legLength / 2, spot.Y),
 			legColor,
-			neon and legCount ~= 2
+			neon and not birdLegs
 		)
 	end
 

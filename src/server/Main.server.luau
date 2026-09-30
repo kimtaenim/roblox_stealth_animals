@@ -1,4 +1,5 @@
--- 서버 진입점: 러닝머신 → 둥지에서 에그 훔치기(등급 랜덤) → 기지로 운반 → 부화(밤엔 30배) → 인덱스에서 모두 받기
+-- 서버 진입점: 러닝머신 → 둥지에서 에그 훔치기(등급 랜덤) → 기지로 운반 → 부화(밤엔 30배)
+-- → 부화한 동물은 기지를 돌아다님 → 인덱스에서 모두 받기. 진행 상황은 저장된다.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -8,7 +9,9 @@ local Format = require(ReplicatedStorage.Shared.Format)
 local AnimalFactory = require(script.Parent.AnimalFactory)
 local Chaser = require(script.Parent.Chaser)
 local DayNight = require(script.Parent.DayNight)
+local Pets = require(script.Parent.Pets)
 local PlayerStats = require(script.Parent.PlayerStats)
+local SaveData = require(script.Parent.SaveData)
 local Sounds = require(script.Parent.Sounds)
 local World = require(script.Parent.World)
 
@@ -29,7 +32,7 @@ for i = 1, Config.BuiltRegionCount do
 	regions[i] = World.buildRegion(i)
 end
 
--- 지역마다 둥지를 지키는 동물 (보스 포함)
+-- 지역마다 지키는 동물 한 마리 (석기시대·봄은 보스)
 local chasersFolder = Instance.new("Folder")
 chasersFolder.Name = "Chasers"
 chasersFolder.Parent = workspace
@@ -55,6 +58,7 @@ type Carry = { model: Model, region: World.Region, spot: World.NestSpot, rarityI
 
 local carrying: { [Player]: Carry } = {}
 local plotOf: { [Player]: World.Plot } = {}
+local canSave: { [Player]: boolean } = {} -- 불러오기에 성공한 사람만 저장 (실패했는데 저장하면 기록이 지워짐)
 
 --------------------------------------------------------------------------------
 -- 둥지의 에그
@@ -213,23 +217,10 @@ end
 -- 부화
 --------------------------------------------------------------------------------
 
-local function updatePending(player: Player, plot: World.Plot)
-	local speed, money = 0, 0
-	for _, pad in plot.pads do
-		if pad.state == "hatched" then
-			local s, m = Config.rewardFor(pad.regionIndex, pad.rarityIndex)
-			speed += s
-			money += m
-		end
-	end
+local function updatePending(player: Player)
+	local speed, money = Pets.pending(player)
 	player:SetAttribute("PendingSpeed", speed)
 	player:SetAttribute("PendingMoney", money)
-end
-
-local function placeOnPad(pad: World.Pad, model: Model)
-	local top = pad.part.Position + Vector3.new(0, pad.part.Size.Y / 2, 0)
-	model:PivotTo(CFrame.new(top) * CFrame.Angles(0, math.rad(180), 0)) -- 출발선 쪽을 보게
-	model.Parent = pad.part
 end
 
 local function clearPad(pad: World.Pad)
@@ -242,21 +233,38 @@ local function clearPad(pad: World.Pad)
 	pad.label.Text = ""
 end
 
--- 기지에 도착하면 빈 부화 자리에 에그를 놓는다
-local function tryDeposit(player: Player, plot: World.Plot, carry: Carry)
-	local pad: World.Pad? = nil
-	for _, candidate in plot.pads do
-		if candidate.state == "empty" then
-			pad = candidate
-			break
+-- 부화 자리에 에그를 놓고 부화를 시작한다 (progress: 이어서 부화할 때)
+local function startHatching(pad: World.Pad, regionIndex: number, rarityIndex: number, progress: number)
+	local rarity = Config.Rarities[rarityIndex]
+	local egg = AnimalFactory.buildEgg(rarity.Color, rarity.Neon)
+	local top = pad.part.Position + Vector3.new(0, pad.part.Size.Y / 2, 0)
+	egg:PivotTo(CFrame.new(top))
+	egg.Parent = pad.part
+	pad.model = egg
+	pad.state = "hatching"
+	pad.regionIndex = regionIndex
+	pad.rarityIndex = rarityIndex
+	pad.progress = progress
+end
+
+local function emptyPad(plot: World.Plot): World.Pad?
+	for _, pad in plot.pads do
+		if pad.state == "empty" then
+			return pad
 		end
 	end
+	return nil
+end
+
+-- 기지에 도착하면 빈 부화 자리에 에그를 놓는다
+local function tryDeposit(player: Player, plot: World.Plot, carry: Carry)
+	local pad = emptyPad(plot)
 	if not pad then
 		if not carry.warned then
 			carry.warned = true
 			notify:FireClient(
 				player,
-				"부화 자리가 꽉 찼어요! 동물을 '놓아주기' 해서 자리를 비워 주세요",
+				"부화 자리가 꽉 찼어요! 부화가 끝날 때까지 기다려 주세요",
 				"danger"
 			)
 		end
@@ -268,53 +276,25 @@ local function tryDeposit(player: Player, plot: World.Plot, carry: Carry)
 	carry.model:Destroy()
 	task.delay(Config.Egg.RespawnTime, spawnNestEgg, carry.region, carry.spot)
 
+	startHatching(pad, carry.region.index, carry.rarityIndex, 0)
 	local rarity = Config.Rarities[carry.rarityIndex]
-	local egg = AnimalFactory.buildEgg(rarity.Color, rarity.Neon)
-	placeOnPad(pad, egg)
-	pad.model = egg
-	pad.state = "hatching"
-	pad.regionIndex = carry.region.index
-	pad.rarityIndex = carry.rarityIndex
-	pad.progress = 0
 	notify:FireClient(player, `{rarity.Name} 에그 부화 시작! ({Format.duration(rarity.HatchTime)})`, "success")
 end
 
-local function hatch(player: Player, plot: World.Plot, pad: World.Pad)
-	if pad.model then
-		pad.model:Destroy()
-	end
+-- 부화하면 동물이 부화 자리에서 나와 기지를 돌아다닌다
+local function hatch(player: Player, pad: World.Pad)
 	local rarity = Config.Rarities[pad.rarityIndex]
 	local region = Config.Regions[pad.regionIndex]
 	local info = region.Animals[rarity.Id]
-	local speed, money = Config.rewardFor(pad.regionIndex, pad.rarityIndex)
+	local regionIndex, rarityIndex = pad.regionIndex, pad.rarityIndex
+	local position = pad.part.Position
+	clearPad(pad)
 
-	local animal = AnimalFactory.build(info.Kind, info)
-	placeOnPad(pad, animal)
-	pad.model = animal
-	pad.state = "hatched"
-	pad.label.Text = `{info.Name}\n⚡{Format.number(speed)} 💰{Format.number(money)}`
-	pad.label.TextColor3 = rarity.Color:Lerp(Color3.new(1, 1, 1), 0.4)
-
-	-- 받은 뒤에도 동물은 남아 있다. 자리가 필요하면 주인이 놓아줄 수 있다.
-	local release = Instance.new("ProximityPrompt")
-	release.ActionText = "놓아주기"
-	release.ObjectText = info.Name
-	release.HoldDuration = 1
-	release.MaxActivationDistance = 8
-	release.RequiresLineOfSight = false
-	release.Enabled = false -- 보상을 받은 뒤에 켜진다
-	release.Parent = animal.PrimaryPart
-	release.Triggered:Connect(function(who)
-		if who == plot.owner and pad.model == animal then
-			clearPad(pad)
-			notify:FireClient(who, `{info.Name} 안녕~ 부화 자리가 하나 생겼어요`, "info")
-		end
-	end)
-
+	Pets.spawn(player, regionIndex, rarityIndex, false, position)
 	player:SetAttribute(`Index_{region.Id}_{rarity.Id}`, true) -- 인덱스 잠금 해제
-	updatePending(player, plot)
+	updatePending(player)
 	Sounds.play("Hatch", pad.part)
-	notify:FireClient(player, `{rarity.Name} {info.Name} 부화! 인덱스에서 받아 가세요`, "success")
+	notify:FireClient(player, `{rarity.Name} {info.Name} 부화! 인덱스에서 보상을 받으세요`, "success")
 end
 
 -- 1초마다 부화 진행 (밤에는 30배 빠르게)
@@ -332,12 +312,11 @@ task.spawn(function()
 					local rarity = Config.Rarities[pad.rarityIndex]
 					pad.progress += multiplier
 					if pad.progress >= rarity.HatchTime then
-						hatch(owner, plot, pad)
+						hatch(owner, pad)
 					else
 						local remaining = (rarity.HatchTime - pad.progress) / multiplier
 						local moon = if multiplier > 1 then " 🌙" else ""
 						pad.label.Text = `{rarity.Name} 에그\n{Format.countdown(remaining)}{moon}`
-						pad.label.TextColor3 = Color3.new(1, 1, 1)
 					end
 				end
 			end
@@ -357,35 +336,14 @@ DayNight.start(function(night)
 end)
 
 claimAll.OnServerEvent:Connect(function(player)
-	local plot = plotOf[player]
-	if not plot then
-		return
-	end
-	local speed, money, count = 0, 0, 0
-	for _, pad in plot.pads do
-		if pad.state == "hatched" then
-			local s, m = Config.rewardFor(pad.regionIndex, pad.rarityIndex)
-			speed += s
-			money += m
-			count += 1
-
-			-- 동물은 그대로 두고 이름만 남긴다
-			pad.state = "claimed"
-			local info = Config.Regions[pad.regionIndex].Animals[Config.Rarities[pad.rarityIndex].Id]
-			pad.label.Text = info.Name
-			local release = pad.model and pad.model:FindFirstChildWhichIsA("ProximityPrompt", true)
-			if release then
-				release.Enabled = true
-			end
-		end
-	end
+	local speed, money, count = Pets.claimAll(player)
 	if count == 0 then
 		notify:FireClient(player, "받을 보상이 없어요. 에그를 부화시켜 보세요!", "info")
 		return
 	end
 	PlayerStats.addSpeed(player, speed)
 	PlayerStats.addMoney(player, money)
-	updatePending(player, plot)
+	updatePending(player)
 	notify:FireClient(
 		player,
 		`동물 {count}마리 보상! ⚡+{Format.number(speed)} 💰+{Format.number(money)}`,
@@ -432,13 +390,89 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- 저장 / 불러오기
+--------------------------------------------------------------------------------
+
+local function collectSaveData(player: Player): SaveData.Data?
+	local stats = PlayerStats.snapshot(player)
+	if not stats then
+		return nil
+	end
+
+	local index = {}
+	for name, value in player:GetAttributes() do
+		if value == true and string.sub(name, 1, 6) == "Index_" then
+			table.insert(index, string.sub(name, 7))
+		end
+	end
+
+	local pets = {}
+	for _, pet in Pets.list(player) do
+		table.insert(pets, { r = pet.regionIndex, k = pet.rarityIndex, c = pet.claimed })
+	end
+
+	local eggs = {}
+	local plot = plotOf[player]
+	if plot then
+		for _, pad in plot.pads do
+			if pad.state == "hatching" then
+				table.insert(eggs, { r = pad.regionIndex, k = pad.rarityIndex, p = pad.progress })
+			end
+		end
+	end
+
+	return {
+		speed = stats.speed,
+		money = stats.money,
+		treadmillLevel = stats.treadmillLevel,
+		index = index,
+		pets = pets,
+		eggs = eggs,
+	}
+end
+
+local function savePlayer(player: Player)
+	if not canSave[player] then
+		return
+	end
+	local data = collectSaveData(player)
+	if data then
+		SaveData.save(player, data)
+	end
+end
+
+-- 저장된 지역/등급 번호가 지금 설정에 있는지 (설정을 바꿨을 때 대비)
+local function isValid(regionIndex: number?, rarityIndex: number?): boolean
+	return type(regionIndex) == "number"
+		and type(rarityIndex) == "number"
+		and Config.Regions[regionIndex] ~= nil
+		and Config.Rarities[rarityIndex] ~= nil
+		and regionIndex <= Config.BuiltRegionCount
+end
+
+--------------------------------------------------------------------------------
 -- 플레이어 입장/퇴장
 --------------------------------------------------------------------------------
 
 local function onPlayerAdded(player: Player)
-	PlayerStats.add(player)
-	player:SetAttribute("PendingSpeed", 0)
-	player:SetAttribute("PendingMoney", 0)
+	local ok, saved = SaveData.load(player)
+	if not player.Parent then
+		return -- 불러오는 동안 나감
+	end
+	canSave[player] = ok
+	local data: SaveData.Data = if ok and type(saved) == "table" then saved else {}
+
+	PlayerStats.add(player, {
+		speed = data.speed,
+		money = data.money,
+		treadmillLevel = if data.treadmillLevel
+			then math.clamp(data.treadmillLevel, 1, #Config.Treadmill.Levels)
+			else nil,
+	})
+	local savedIndex: { string } = data.index or {}
+	for _, key in savedIndex do
+		player:SetAttribute(`Index_{key}`, true)
+	end
 
 	for _, plot in base.plots do
 		if not plot.owner then
@@ -449,6 +483,35 @@ local function onPlayerAdded(player: Player)
 		end
 	end
 
+	-- 저장된 동물과 부화 중이던 에그 되살리기
+	local savedPets: { { r: number, k: number, c: boolean } } = data.pets or {}
+	for _, pet in savedPets do
+		if isValid(pet.r, pet.k) then
+			Pets.spawn(player, pet.r, pet.k, pet.c == true)
+		end
+	end
+	local plot = plotOf[player]
+	if plot then
+		local savedEggs: { { r: number, k: number, p: number } } = data.eggs or {}
+		for _, egg in savedEggs do
+			local pad = emptyPad(plot)
+			if pad and isValid(egg.r, egg.k) then
+				startHatching(pad, egg.r, egg.k, egg.p or 0)
+			end
+		end
+	end
+	updatePending(player)
+
+	if not ok then
+		notify:FireClient(
+			player,
+			"⚠️ 저장 기능이 꺼져 있어요. 이번 기록은 저장되지 않아요",
+			"danger"
+		)
+	elseif data.speed then
+		notify:FireClient(player, "💾 저장된 기록을 불러왔어요!", "success")
+	end
+
 	player.CharacterRemoving:Connect(function()
 		loseCarry(player)
 	end)
@@ -456,11 +519,13 @@ end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
 for _, player in Players:GetPlayers() do
-	onPlayerAdded(player)
+	task.spawn(onPlayerAdded, player)
 end
 
 Players.PlayerRemoving:Connect(function(player)
 	loseCarry(player)
+	savePlayer(player)
+
 	local plot = plotOf[player]
 	if plot then
 		plot.owner = nil
@@ -469,8 +534,26 @@ Players.PlayerRemoving:Connect(function(player)
 			clearPad(pad)
 		end
 	end
+	Pets.removeAll(player)
 	plotOf[player] = nil
+	canSave[player] = nil
 	PlayerStats.remove(player)
+end)
+
+-- 자동 저장 + 서버가 꺼질 때 저장
+task.spawn(function()
+	while true do
+		task.wait(Config.Save.AutoSaveInterval)
+		for _, player in Players:GetPlayers() do
+			task.spawn(savePlayer, player)
+		end
+	end
+end)
+
+game:BindToClose(function()
+	for _, player in Players:GetPlayers() do
+		savePlayer(player)
+	end
 end)
 
 task.spawn(function()
@@ -481,10 +564,8 @@ task.spawn(function()
 end)
 
 --------------------------------------------------------------------------------
--- 매 프레임: 러닝머신, 지역 입장 조건, 기지 도착, 둥지를 지키는 동물
+-- 매 프레임: 러닝머신, 기지 도착, 지키는 동물, 기지 동물
 --------------------------------------------------------------------------------
-
-local BASE_RETURN = CFrame.new(0, 4, Config.Base.Depth / 2 - 6)
 
 RunService.Heartbeat:Connect(function(dt)
 	local targets: { Chaser.Target } = {}
@@ -499,16 +580,9 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 		local position = root.Position
 
+		-- 러닝머신 위에 있기만 하면 속도가 오른다
 		if World.isOnTreadmill(base, position) then
 			PlayerStats.addSpeed(player, Config.Treadmill.Levels[data.treadmillLevel].Gain * dt)
-		end
-
-		for _, region in regions do
-			local required = Config.Regions[region.index].RequiredSpeed
-			if data.speed < required and World.isInsideRegion(region, position) then
-				character:PivotTo(BASE_RETURN)
-				notify:FireClient(player, `속도가 부족해요! ⚡{Format.number(required)} 필요`, "danger")
-			end
 		end
 
 		local carry = carrying[player]
@@ -547,6 +621,8 @@ RunService.Heartbeat:Connect(function(dt)
 			spawnNestEgg(chaser.region, returnedEgg.spot)
 		end
 	end
+
+	Pets.update(dt)
 end)
 
 print(

@@ -23,7 +23,6 @@ end
 -- 러닝머신: 레벨별 초당 속도 증가량(Gain)과 업그레이드 비용(Cost). 숫자는 자유롭게 바꿔도 된다.
 --------------------------------------------------------------------------------
 Config.Treadmill = {
-	BeltSpeed = 10, -- 벨트가 뒤로 미는 속도. 달리지 않으면 밀려서 떨어진다.
 	WallColor = Color3.fromRGB(120, 230, 255), -- 방벽 색 (밝은 하늘색)
 	Levels = {
 		{ Gain = 1, Cost = 0 }, -- Lv.1 (처음)
@@ -160,17 +159,21 @@ Config.Sounds = {
 }
 
 --------------------------------------------------------------------------------
--- 지역 (위에서부터 1번 지역). RequiredSpeed = 들어가는 데 필요한 속도
+-- 지역 (위에서부터 1번 지역). 속도가 부족해도 들어갈 수 있지만, 동물이 빨라서 도망치기 어렵다.
 --------------------------------------------------------------------------------
--- Animals: 등급별로 부화하는 동물. Kind = AnimalFactory 모양 이름, Color/Neon 으로 색을 바꿀 수 있다.
--- Chasers: 에그를 들고 있으면 쫓아와서 때리는 동물. Boss: 더 크고 빠른 보스.
+-- Animals: 등급별로 부화하는 동물. Kind = AnimalFactory 모양 이름, Color/Neon/Scale 로 모습을 바꿀 수 있다.
+-- Chasers: (지역마다 한 마리) 지역을 돌아다니다가 에그를 든 플레이어를 쫓아와 때리는 동물. Boss: 더 크고 빠른 보스.
+-- RecommendedSpeed: 표지판에 보여 주는 추천 속도
 -- Decor: 꾸미기 종류 ("Tree", "Cactus", "Coral", "Rock")
+local PURPLE = Color3.fromRGB(120, 60, 220)
+local GOLD = Color3.fromRGB(255, 200, 50)
+
 Config.Regions = {
 	{
 		Id = "Forest",
 		Name = "숲",
 		Emoji = "🌲",
-		RequiredSpeed = 0,
+		RecommendedSpeed = 0,
 		Cosmic = { Speed = 50_000, Money = 100_000 },
 		GroundColor = Color3.fromRGB(90, 150, 70),
 		GroundMaterial = Enum.Material.Grass,
@@ -183,42 +186,38 @@ Config.Regions = {
 			Legendary = { Kind = "Wolf", Name = "늑대" },
 			Mythic = { Kind = "Bear", Name = "곰" },
 			Secret = { Kind = "Unicorn", Name = "유니콘" },
-			Cosmic = { Kind = "Deer", Name = "우주 사슴", Color = Color3.fromRGB(120, 60, 220), Neon = true },
+			Cosmic = { Kind = "Deer", Name = "우주 사슴", Color = PURPLE, Neon = true },
 		},
-		Chasers = { { Kind = "Wolf" }, { Kind = "Wolf" }, { Kind = "Bear" } },
+		Chasers = { { Kind = "Bear" } },
 		ChaserSpeed = 20,
 	},
 	{
 		Id = "Desert",
 		Name = "사막",
 		Emoji = "🏜️",
-		RequiredSpeed = 5_000,
+		RecommendedSpeed = 5_000,
 		Cosmic = { Speed = 100_000, Money = 1_000_000 },
 		GroundColor = Color3.fromRGB(230, 200, 130),
 		GroundMaterial = Enum.Material.Sand,
 		Decor = { Kind = "Cactus", Color = Color3.fromRGB(70, 140, 70) },
 		Animals = {
-			Common = { Kind = "Lizard", Name = "도마뱀", Color = Color3.fromRGB(200, 170, 100) },
-			Uncommon = { Kind = "Fox", Name = "사막여우", Color = Color3.fromRGB(235, 200, 140) },
-			Rare = { Kind = "Bird", Name = "독수리", Color = Color3.fromRGB(110, 75, 45) },
-			Epic = { Kind = "Camel", Name = "낙타" },
-			Legendary = { Kind = "Wolf", Name = "코요테", Color = Color3.fromRGB(190, 150, 100) },
-			Mythic = { Kind = "Camel", Name = "황금 낙타", Color = Color3.fromRGB(255, 200, 50), Neon = true },
-			Secret = { Kind = "Unicorn", Name = "모래 유니콘", Color = Color3.fromRGB(240, 220, 170) },
-			Cosmic = { Kind = "Camel", Name = "우주 낙타", Color = Color3.fromRGB(120, 60, 220), Neon = true },
+			Common = { Kind = "Scorpion", Name = "전갈" },
+			Uncommon = { Kind = "Lizard", Name = "도마뱀", Color = Color3.fromRGB(200, 170, 100) },
+			Rare = { Kind = "Fox", Name = "사막여우", Color = Color3.fromRGB(235, 200, 140) },
+			Epic = { Kind = "Kangaroo", Name = "캥거루" },
+			Legendary = { Kind = "Bird", Name = "독수리", Color = Color3.fromRGB(110, 75, 45), Scale = 1.5 },
+			Mythic = { Kind = "Camel", Name = "낙타" },
+			Secret = { Kind = "Scorpion", Name = "황금 전갈", Color = GOLD, Neon = true, Scale = 1.5 },
+			Cosmic = { Kind = "Camel", Name = "우주 낙타", Color = PURPLE, Neon = true },
 		},
-		Chasers = {
-			{ Kind = "Wolf", Color = Color3.fromRGB(190, 150, 100) },
-			{ Kind = "Wolf", Color = Color3.fromRGB(190, 150, 100) },
-			{ Kind = "Camel" },
-		},
+		Chasers = { { Kind = "Scorpion", Scale = 2.5 } },
 		ChaserSpeed = 40,
 	},
 	{
 		Id = "Jungle",
 		Name = "정글",
 		Emoji = "🌴",
-		RequiredSpeed = 50_000,
+		RecommendedSpeed = 50_000,
 		Cosmic = { Speed = 10_000_000, Money = 10_000_000 },
 		GroundColor = Color3.fromRGB(50, 110, 50),
 		GroundMaterial = Enum.Material.Grass,
@@ -231,20 +230,16 @@ Config.Regions = {
 			Legendary = { Kind = "Wolf", Name = "호랑이", Color = Color3.fromRGB(240, 130, 30) },
 			Mythic = { Kind = "Bear", Name = "고릴라", Color = Color3.fromRGB(45, 45, 50) },
 			Secret = { Kind = "Bird", Name = "무지개 앵무새", Color = Color3.fromRGB(80, 220, 255), Neon = true },
-			Cosmic = { Kind = "Wolf", Name = "우주 호랑이", Color = Color3.fromRGB(120, 60, 220), Neon = true },
+			Cosmic = { Kind = "Wolf", Name = "우주 호랑이", Color = PURPLE, Neon = true },
 		},
-		Chasers = {
-			{ Kind = "Wolf", Color = Color3.fromRGB(240, 130, 30) },
-			{ Kind = "Wolf", Color = Color3.fromRGB(240, 130, 30) },
-			{ Kind = "Bear", Color = Color3.fromRGB(45, 45, 50) },
-		},
+		Chasers = { { Kind = "Wolf", Color = Color3.fromRGB(240, 130, 30) } },
 		ChaserSpeed = 50,
 	},
 	{
 		Id = "DeepSea",
 		Name = "심해",
 		Emoji = "🌊",
-		RequiredSpeed = 5_000_000,
+		RecommendedSpeed = 5_000_000,
 		Cosmic = { Speed = 100_000_000, Money = 10_000_000 },
 		GroundColor = Color3.fromRGB(30, 60, 110),
 		GroundMaterial = Enum.Material.Sand,
@@ -252,52 +247,36 @@ Config.Regions = {
 		Animals = {
 			Common = { Kind = "Fish", Name = "흰동가리", Color = Color3.fromRGB(255, 140, 40) },
 			Uncommon = { Kind = "Fish", Name = "복어", Color = Color3.fromRGB(240, 220, 90) },
-			Rare = { Kind = "Lizard", Name = "바다거북", Color = Color3.fromRGB(60, 140, 90) },
-			Epic = { Kind = "Fish", Name = "해파리", Color = Color3.fromRGB(255, 150, 220), Neon = true },
-			Legendary = { Kind = "Fish", Name = "돌고래", Color = Color3.fromRGB(120, 150, 190) },
-			Mythic = { Kind = "Fish", Name = "상어", Color = Color3.fromRGB(110, 120, 130), Scale = 1.5 },
-			Secret = { Kind = "Fish", Name = "고래", Color = Color3.fromRGB(40, 60, 120), Scale = 2 },
-			Cosmic = {
-				Kind = "Fish",
-				Name = "우주 고래",
-				Color = Color3.fromRGB(120, 60, 220),
-				Neon = true,
-				Scale = 2,
-			},
+			Rare = { Kind = "Fish", Name = "해파리", Color = Color3.fromRGB(255, 150, 220), Neon = true },
+			Epic = { Kind = "Turtle", Name = "바다거북" },
+			Legendary = { Kind = "Fish", Name = "돌고래", Color = Color3.fromRGB(120, 150, 190), Scale = 1.5 },
+			Mythic = { Kind = "Fish", Name = "벨루가", Color = Color3.fromRGB(245, 245, 250), Scale = 1.8 },
+			Secret = { Kind = "Fish", Name = "상어", Color = Color3.fromRGB(110, 120, 130), Scale = 2 },
+			Cosmic = { Kind = "Fish", Name = "우주 고래", Color = PURPLE, Neon = true, Scale = 2.5 },
 		},
-		Chasers = {
-			{ Kind = "Fish", Color = Color3.fromRGB(110, 120, 130), Scale = 2 },
-			{ Kind = "Fish", Color = Color3.fromRGB(110, 120, 130), Scale = 2 },
-			{ Kind = "Fish", Color = Color3.fromRGB(110, 120, 130), Scale = 2 },
-		},
+		Chasers = { { Kind = "Fish", Color = Color3.fromRGB(110, 120, 130), Scale = 2 } },
 		ChaserSpeed = 65,
 	},
 	{
 		Id = "StoneAge",
 		Name = "석기시대",
 		Emoji = "🪨",
-		RequiredSpeed = 50_000_000,
+		RecommendedSpeed = 50_000_000,
 		Cosmic = { Speed = 1_000_000_000, Money = 10_000_000 },
 		GroundColor = Color3.fromRGB(140, 110, 80),
 		GroundMaterial = Enum.Material.Ground,
 		Decor = { Kind = "Rock" },
 		Animals = {
-			Common = { Kind = "Bird", Name = "도도새", Color = Color3.fromRGB(150, 150, 160) },
-			Uncommon = { Kind = "Boar", Name = "원시 멧돼지" },
-			Rare = { Kind = "Wolf", Name = "검치호", Color = Color3.fromRGB(210, 170, 110) },
-			Epic = { Kind = "Bear", Name = "털코뿔소", Color = Color3.fromRGB(130, 120, 110) },
-			Legendary = { Kind = "Mammoth", Name = "매머드" },
-			Mythic = { Kind = "Lizard", Name = "공룡", Color = Color3.fromRGB(70, 150, 70), Scale = 2.5 },
-			Secret = { Kind = "Mammoth", Name = "황금 매머드", Color = Color3.fromRGB(255, 200, 50), Neon = true },
-			Cosmic = {
-				Kind = "Lizard",
-				Name = "우주 공룡",
-				Color = Color3.fromRGB(120, 60, 220),
-				Neon = true,
-				Scale = 2.5,
-			},
+			Common = { Kind = "Lizard", Name = "콤프소그나투스", Color = Color3.fromRGB(120, 160, 80) },
+			Uncommon = { Kind = "Bird", Name = "프테라노돈", Color = Color3.fromRGB(170, 120, 90), Scale = 1.8 },
+			Rare = { Kind = "Stegosaurus", Name = "스테고사우루스" },
+			Epic = { Kind = "Triceratops", Name = "트리케라톱스" },
+			Legendary = { Kind = "LongNeck", Name = "브라키오사우루스" },
+			Mythic = { Kind = "Trex", Name = "티라노사우루스" },
+			Secret = { Kind = "Trex", Name = "황금 티라노", Color = GOLD, Neon = true },
+			Cosmic = { Kind = "Trex", Name = "우주 티라노", Color = PURPLE, Neon = true },
 		},
-		Chasers = { { Kind = "Wolf", Color = Color3.fromRGB(210, 170, 110) }, { Kind = "Mammoth" } },
+		Chasers = {}, -- 보스 혼자 지킨다
 		ChaserSpeed = 72,
 		Boss = { Kind = "Caveman", Name = "망치를 든 원시인", Scale = 2, Speed = 80 },
 	},
@@ -305,24 +284,31 @@ Config.Regions = {
 		Id = "Spring",
 		Name = "봄",
 		Emoji = "🌸",
-		RequiredSpeed = 500_000_000,
+		RecommendedSpeed = 500_000_000,
 		Cosmic = { Speed = 10_000_000_000, Money = 10_000_000 },
 		GroundColor = Color3.fromRGB(150, 210, 120),
 		GroundMaterial = Enum.Material.Grass,
 		Decor = { Kind = "Tree", Color = Color3.fromRGB(255, 180, 210) },
+		-- 신화 속 동물들
 		Animals = {
-			Common = { Kind = "Bird", Name = "병아리", Color = Color3.fromRGB(255, 230, 90) },
-			Uncommon = { Kind = "Rabbit", Name = "분홍 토끼", Color = Color3.fromRGB(255, 190, 210) },
-			Rare = { Kind = "Bird", Name = "백조", Color = Color3.fromRGB(250, 250, 250) },
-			Epic = { Kind = "Deer", Name = "꽃사슴", Color = Color3.fromRGB(220, 150, 110) },
-			Legendary = { Kind = "Bear", Name = "판다", Color = Color3.fromRGB(245, 245, 245) },
-			Mythic = { Kind = "Unicorn", Name = "벚꽃 유니콘", Color = Color3.fromRGB(255, 200, 225) },
-			Secret = { Kind = "NineTail", Name = "구미호", Color = Color3.fromRGB(250, 250, 250) },
-			Cosmic = { Kind = "NineTail", Name = "우주 구미호", Color = Color3.fromRGB(120, 60, 220), Neon = true },
+			Common = { Kind = "Dragon", Name = "꼬마 용", Scale = 0.7 },
+			Uncommon = { Kind = "Wolf", Name = "해태", Color = Color3.fromRGB(120, 170, 200) },
+			Rare = { Kind = "Pegasus", Name = "그리핀", Color = Color3.fromRGB(200, 160, 80) },
+			Epic = { Kind = "Pegasus", Name = "페가수스" },
+			Legendary = {
+				Kind = "Bird",
+				Name = "불사조",
+				Color = Color3.fromRGB(255, 110, 30),
+				Neon = true,
+				Scale = 1.6,
+			},
+			Mythic = { Kind = "Unicorn", Name = "유니콘" },
+			Secret = { Kind = "NineTail", Name = "구미호" },
+			Cosmic = { Kind = "Dragon", Name = "우주 드래곤", Color = PURPLE, Neon = true, Scale = 1.5 },
 		},
-		Chasers = { { Kind = "Fox" }, { Kind = "Fox" } },
+		Chasers = {}, -- 보스 혼자 지킨다
 		ChaserSpeed = 80,
-		Boss = { Kind = "NineTail", Name = "구미호", Scale = 2.5, Speed = 90, Color = Color3.fromRGB(250, 250, 250) },
+		Boss = { Kind = "NineTail", Name = "구미호", Scale = 2.5, Speed = 90 },
 	},
 }
 
@@ -339,11 +325,14 @@ function Config.rewardFor(regionIndex: number, rarityIndex: number): (number, nu
 end
 
 --------------------------------------------------------------------------------
--- 맵 배치
+-- 맵 배치 (기지와 지역은 모두 폭이 같고, 경계선에서 바로 이어진다)
 --------------------------------------------------------------------------------
 Config.Base = {
-	Width = 140, -- X 방향
+	Width = 300, -- X 방향 (지역과 같은 폭)
 	Depth = 80, -- Z 방향 (z -40 ~ 40), z = 40 이 출발선
+	GroundColor = Color3.fromRGB(110, 190, 90), -- 초록 잔디
+	FenceColor = Color3.fromRGB(150, 105, 60),
+	GateWidth = 60, -- 출발선 쪽 울타리 가운데 문 폭
 	PlotSize = 28, -- 부화 자리 16칸 (4 x 4)
 	PlotCenters = {
 		Vector3.new(-51, 0, -25),
@@ -354,28 +343,36 @@ Config.Base = {
 	PlotColors = {
 		Color3.fromRGB(90, 150, 230),
 		Color3.fromRGB(230, 110, 110),
-		Color3.fromRGB(120, 200, 120),
+		Color3.fromRGB(240, 240, 240),
 		Color3.fromRGB(230, 190, 80),
 	},
 	TreadmillXs = { -45, -15, 15, 45 }, -- 러닝머신 위치 (z 2 ~ 18)
 	UpgradeKiosk = Vector3.new(0, 0, 24),
+	MaxPets = 40, -- 한 사람이 기지에 둘 수 있는 동물 수. 넘으면 가장 오래된 동물이 떠난다
+	PetWalkSpeed = 5, -- 기지 동물이 돌아다니는 속도
 }
 
 Config.RegionLayout = {
-	FirstStartZ = 100, -- 1번 지역이 시작되는 z
+	FirstStartZ = 40, -- 1번 지역은 출발선에서 바로 시작
 	Length = 200,
-	Gap = 40, -- 지역 사이 간격
-	Width = 100,
+	Width = 300,
 	NestOffset = 140, -- 지역 입구에서 둥지까지 거리
 }
 
 Config.Chaser = {
 	AggroRange = 60, -- 에그를 든 플레이어를 알아채는 거리
 	LeashMargin = 20, -- 지역 밖으로 이만큼 나가면 포기하고 돌아감
+	NestKeepOut = 20, -- 둥지 중심에서 이 거리 안으로는 들어오지 않는다 (훔칠 틈)
+	WanderSpeedRatio = 0.35, -- 어슬렁거릴 때는 쫓을 때 속도의 이만큼
 	HitRange = 5,
 	HitCooldown = 1.5,
 	KnockbackHorizontal = 90,
 	KnockbackVertical = 60,
+}
+
+Config.Save = {
+	DataStoreName = "StealthAnimals_v1",
+	AutoSaveInterval = 60, -- 초
 }
 
 return Config

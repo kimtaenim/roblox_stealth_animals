@@ -230,7 +230,7 @@ for regionIndex = 1, Config.BuiltRegionCount do
 	end
 end
 
-local claimButton = makeButton(panel, "모두 받기", Color3.fromRGB(60, 170, 90))
+local claimButton = makeButton(panel, "✔ 모두 받기", Color3.fromRGB(60, 170, 90))
 claimButton.AnchorPoint = Vector2.new(0.5, 1)
 claimButton.Position = UDim2.new(0.5, 0, 1, -16)
 claimButton.Size = UDim2.fromOffset(360, 50)
@@ -246,7 +246,7 @@ local function refreshIndex()
 
 	local pendingSpeed = player:GetAttribute("PendingSpeed") or 0
 	local pendingMoney = player:GetAttribute("PendingMoney") or 0
-	claimButton.Text = `모두 받기   ⚡{Format.number(pendingSpeed)}  💰{Format.number(pendingMoney)}`
+	claimButton.Text = `✔ 모두 받기   ⚡{Format.number(pendingSpeed)}  💰{Format.number(pendingMoney)}`
 	indexButton.Text = if pendingSpeed > 0 or pendingMoney > 0 then "📖 인덱스 ❗" else "📖 인덱스"
 end
 
@@ -308,4 +308,4 @@ help.Position = UDim2.new(0, 16, 1, -16)
 help.Size = UDim2.fromOffset(600, 20)
 help.TextXAlignment = Enum.TextXAlignment.Left
 help.Text =
-	"러닝머신 위에서 달려 속도 올리기 · [E 길게] 에그 훔치기 · 인덱스에서 모두 받기"
+	"러닝머신 위에 서 있으면 속도 UP · [E 길게] 에그 훔치기 · 인덱스에서 ✔ 모두 받기"

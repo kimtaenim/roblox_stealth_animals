@@ -17,7 +17,10 @@ export type Data = {
 
 local dataOf: { [Player]: Data } = {}
 
-function PlayerStats.add(player: Player)
+export type Saved = { speed: number?, money: number?, treadmillLevel: number? }
+
+-- saved: 저장돼 있던 값 (없으면 처음부터)
+function PlayerStats.add(player: Player, saved: Saved?)
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	local speedDisplay = Instance.new("StringValue")
@@ -29,14 +32,23 @@ function PlayerStats.add(player: Player)
 	leaderstats.Parent = player
 
 	dataOf[player] = {
-		speed = 0,
-		money = 0,
-		treadmillLevel = 1,
+		speed = (saved and saved.speed) or 0,
+		money = (saved and saved.money) or 0,
+		treadmillLevel = (saved and saved.treadmillLevel) or 1,
 		speedDisplay = speedDisplay,
 		moneyDisplay = moneyDisplay,
 		dirty = true,
 	}
 	PlayerStats.flush()
+end
+
+-- 저장할 값
+function PlayerStats.snapshot(player: Player): Saved?
+	local data = dataOf[player]
+	if not data then
+		return nil
+	end
+	return { speed = data.speed, money = data.money, treadmillLevel = data.treadmillLevel }
 end
 
 function PlayerStats.remove(player: Player)
